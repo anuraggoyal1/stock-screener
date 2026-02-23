@@ -27,6 +27,7 @@ class BuyOrder(BaseModel):
     quantity: int = 1
     order_type: Optional[str] = "MARKET"
     price: Optional[float] = None
+    curr_price: Optional[float] = None
 
 
 class SellOrder(BaseModel):
@@ -34,6 +35,8 @@ class SellOrder(BaseModel):
     quantity: Optional[int] = None
     order_type: Optional[str] = "MARKET"
     price: Optional[float] = None
+    buy_date: Optional[str] = None
+    buy_price: Optional[float] = None
 
 
 @router.post("/buy")
@@ -56,13 +59,14 @@ async def buy_stock(order: BuyOrder):
     # Get current price for buy price record
     try:
         quote = await get_current_price(order.symbol)
-        buy_price = order.price or quote.get("close", 0)
+        # Prefer last_price, then close, then the price from the order, then curr_price from frontend, then 0
+        buy_price = order.price or quote.get("last_price") or quote.get("close") or order.curr_price or 0
     except Exception:
-        buy_price = order.price or 0
+        buy_price = order.price or order.curr_price or 0
 
-    # Look up stock name
-    master_stock = master_store.find_row("symbol", order.symbol)
-    stock_name = master_stock.get("stock_name", order.symbol) if master_stock else order.symbol
+    # Look up stock name from master list
+    master_stock = master_store.find_row("trading_symbol", order.symbol) or master_store.find_row("symbol", order.symbol)
+    stock_name = master_stock.get("stock_name") or master_stock.get("name") or order.symbol if master_stock else order.symbol
 
     # Add to positions
     position = {
@@ -87,10 +91,23 @@ async def sell_stock(order: SellOrder):
     """
     Place a sell order via Zerodha, remove from positions, add to trade log.
     """
-    # Find the position
-    position = positions_store.find_row("symbol", order.symbol)
+    # Find the specific position
+    all_positions = positions_store.read_all()
+    position = None
+    for p in all_positions:
+        if p["symbol"].upper() == order.symbol.upper():
+            match = True
+            if order.buy_date and str(p.get("buy_date")) != str(order.buy_date):
+                match = False
+            if order.buy_price is not None and abs(float(p.get("buy_price", 0)) - float(order.buy_price)) > 0.01:
+                match = False
+            
+            if match:
+                position = p
+                break
+
     if not position:
-        raise HTTPException(status_code=404, detail=f"No position found for {order.symbol}")
+        raise HTTPException(status_code=404, detail=f"No matching position found for {order.symbol}")
 
     sell_qty = order.quantity or int(float(position.get("quantity", 0)))
 
@@ -131,8 +148,14 @@ async def sell_stock(order: SellOrder):
     }
     tradelog_store.add_row(trade)
 
-    # Remove from positions
-    positions_store.delete_row("symbol", order.symbol)
+    # Remove from positions (specifically the one we matched)
+    criteria = {"symbol": order.symbol.upper()}
+    if order.buy_date:
+        criteria["buy_date"] = order.buy_date
+    if order.buy_price is not None:
+        criteria["buy_price"] = order.buy_price
+    
+    positions_store.delete_one(criteria)
 
     return {
         "status": "success",

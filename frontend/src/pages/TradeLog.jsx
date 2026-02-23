@@ -148,7 +148,16 @@ export default function TradeLog({ addToast }) {
 
                                 return (
                                     <tr key={`${trade.symbol}-${idx}`}>
-                                        <td className="cell-symbol">{trade.symbol}</td>
+                                        <td className="cell-symbol">
+                                            <a
+                                                href={`https://www.tradingview.com/chart/?symbol=NSE:${trade.symbol}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                            >
+                                                {trade.symbol}
+                                            </a>
+                                        </td>
                                         <td>{trade.stock_name}</td>
                                         <td className="text-right">{formatCurrency(trade.buy_price)}</td>
                                         <td className="text-right fw-600">{formatCurrency(trade.sell_price)}</td>

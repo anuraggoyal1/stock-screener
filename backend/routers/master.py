@@ -7,8 +7,9 @@ CRUD operations for the master stock list + data refresh.
 import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timedelta
+import asyncio
 
 from backend.services.csv_store import CSVStore
 from backend.services.upstox import get_historical_candles, get_current_price, get_monthly_ath
@@ -65,6 +66,7 @@ class StockCreate(BaseModel):
     ema5: Optional[float] = 0.0
     ema10: Optional[float] = 0.0
     ema20: Optional[float] = 0.0
+    open: Optional[float] = 0.0
 
 
 class StockUpdate(BaseModel):
@@ -75,6 +77,7 @@ class StockUpdate(BaseModel):
     ema5: Optional[float] = None
     ema10: Optional[float] = None
     ema20: Optional[float] = None
+    open: Optional[float] = None
 
 
 @router.get("")
@@ -128,6 +131,7 @@ async def add_stock(stock: StockCreate):
         "today_change_pct": 0.0,
         "instrument_key": instrument_key,
         "ema5": 0.0,
+        "open": 0.0,
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
@@ -163,225 +167,179 @@ async def delete_stock(symbol: str):
     return {"status": "success", "message": f"Stock {symbol} removed"}
 
 
+async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
+    """
+    Helper to fetch all required data for a single stock.
+    quote: Pre-fetched quote from get_multiple_quotes for efficiency.
+    """
+    trading_symbol = stock.get("trading_symbol") or stock.get("symbol")
+    if not trading_symbol:
+        return stock
+
+    instrument_key = stock.get("instrument_key") or f"NSE_EQ|{trading_symbol}"
+
+    try:
+        # 1. Get Live Quote (if not provided)
+        if not quote:
+            quote = await get_current_price(instrument_key)
+
+        today_live_close = float(quote.get("last_price") or quote.get("close") or 0)
+        live_ohlc = quote.get("live_ohlc") or {}
+        today_date_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # 2. Fetch Historical Candles (100 days)
+        # This one call gives us enough for EMA series AND Previous Day O->C
+        candles = await get_historical_candles(instrument_key, days=100)
+        if not candles:
+            return stock
+        
+        # Ensure chronological order
+        if candles and len(candles) > 1:
+            if candles[0].get("date", "") > candles[-1].get("date", ""):
+                candles_reversed = list(reversed(candles))
+            else:
+                candles_reversed = candles
+        else:
+            candles_reversed = candles or []
+        
+        newest_candle_date = candles_reversed[-1].get("date", "") if candles_reversed else ""
+        historical_includes_today = newest_candle_date.startswith(today_date_str)
+        close_prices = [c["close"] for c in candles_reversed]
+        
+        if not historical_includes_today and today_live_close > 0:
+            close_prices.append(today_live_close)
+        elif historical_includes_today and today_live_close > 0:
+            close_prices[-1] = today_live_close
+
+        # 3. EMA Calculation
+        ema5 = calculate_ema(close_prices, 5) if len(close_prices) >= 5 else 0.0
+        ema10 = calculate_ema(close_prices, 10) if len(close_prices) >= 10 else 0.0
+        ema20 = calculate_ema(close_prices, 20) if len(close_prices) >= 20 else 0.0
+        
+        # 4. ATH: Monthly candles (10 years)
+        # This remains a separate call per stock
+        existing_ath = float(stock.get("ath", 0))
+        try:
+            ath_monthly = await get_monthly_ath(instrument_key, years=10)
+            ath = max(ath_monthly, existing_ath) if ath_monthly > 0 else existing_ath
+        except Exception:
+            all_highs = [c["high"] for c in candles_reversed]
+            ath_daily = max(all_highs) if all_highs else 0.0
+            ath = max(existing_ath, ath_daily)
+
+        # 5. Extract Prev Day O->C % from captured historical series (Save 1 Request!)
+        prev_change_pct = 0.0
+        try:
+            # If historical_includes_today is true, the prev day is candles_reversed[-2]
+            # If it's false, the prev day is candles_reversed[-1]
+            prev_idx = -2 if historical_includes_today else -1
+            if len(candles_reversed) >= abs(prev_idx):
+                prev_candle = candles_reversed[prev_idx]
+                prev_open = float(prev_candle.get("open", 0) or 0)
+                prev_close = float(prev_candle.get("close", 0) or 0)
+                if prev_open > 0:
+                    prev_change_pct = round(((prev_close - prev_open) / prev_open) * 100, 2)
+        except Exception:
+            prev_change_pct = 0.0
+
+        cp = today_live_close if today_live_close > 0 else stock.get("cp", 0)
+        
+        # Today O->C % from live_ohlc
+        today_change_pct = 0.0
+        today_open = float(live_ohlc.get("open", 0) or 0)
+        try:
+            today_close = float(live_ohlc.get("close", 0) or 0)
+            if today_open > 0:
+                today_change_pct = round(((today_close - today_open) / today_open) * 100, 2)
+        except Exception:
+            today_open = stock.get("open", 0.0)
+            today_change_pct = 0.0
+
+        return {
+            **stock,
+            "cp": cp,
+            "ema5": round(ema5, 2),
+            "ema10": round(ema10, 2),
+            "ema20": round(ema20, 2),
+            "ath": round(ath, 2),
+            "prev_change_pct": prev_change_pct,
+            "today_change_pct": today_change_pct,
+            "instrument_key": instrument_key,
+            "open": today_open,
+            "last_updated": datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        print(f"[Master Refresh] Error for {trading_symbol}: {repr(e)}")
+        stock["refresh_error"] = str(e)
+        return stock
+
+
+async def process_sublist(sublist: List[dict], quotes: dict) -> List[dict]:
+    """Process a sublist of stocks sequentially with controlled delay."""
+    results = []
+    for stock in sublist:
+        symbol = stock.get("trading_symbol") or stock.get("symbol")
+        quote = quotes.get(symbol)
+        updated_stock = await refresh_stock_data(stock, quote)
+        results.append(updated_stock)
+        # Average throughput targeting ~5-7 RPS across all workers to stay under 450/min
+        # Since we have 5 workers, each worker should wait ~0.8s between cycles
+        # (5 workers / 0.8s cycle = 6.25 RPS total)
+        await asyncio.sleep(0.8)
+    return results
+
+
 @router.post("/refresh")
 async def refresh_all():
-    """Refresh all stocks with latest data from Upstox."""
+    """Refresh all stocks with highly optimized rate-limited processing."""
     stocks = store.read_all()
-    updated_count = 0
-    errors = []
+    if not stocks:
+        return {"status": "success", "message": "No stocks to refresh"}
 
-    for stock in stocks:
-        # Support both old schema (symbol) and new schema (trading_symbol + instrument_key)
-        trading_symbol = stock.get("trading_symbol") or stock.get("symbol")
-        if not trading_symbol:
-            errors.append({"symbol": None, "error": "Missing trading_symbol/symbol"})
-            continue
-
-        instrument_key = stock.get("instrument_key") or f"NSE_EQ|{trading_symbol}"
-
-        print(
-            "[Master Refresh] Processing",
-            "trading_symbol=", trading_symbol,
-            "instrument_key=", instrument_key,
-        )
-
+    # 1. Batch fetch all live quotes first (huge savings!)
+    # Upstox v3 supports many keys at once. We'll chunk the list into groups of 50.
+    all_quotes = {}
+    from backend.services.upstox import get_multiple_quotes
+    
+    symbols = [s.get("trading_symbol") or s.get("symbol") for s in stocks]
+    for i in range(0, len(symbols), 50):
+        chunk = symbols[i:i+50]
         try:
-            # Get today's live quote first to check dates
-            quote = await get_current_price(instrument_key)
-            today_live_close = float(
-                quote.get("last_price")
-                or quote.get("close")
-                or 0
-            )
-            live_ohlc = quote.get("live_ohlc") or {}
-            today_date_str = datetime.now().strftime("%Y-%m-%d")
-            
-            # Fetch 100 calendar days (~70+ trading days) so EMA20 has enough history:
-            # same logic for all: SMA of oldest n days, then EMA for every day until today
-            candles = await get_historical_candles(instrument_key, days=100)
-            if not candles:
-                continue
-            
-            print(
-                "[Master Refresh] Historical Data",
-                "trading_symbol=", trading_symbol,
-                "candles_count=", len(candles),
-                "first_date=", candles[0].get("date") if candles else None,
-                "last_date=", candles[-1].get("date") if candles else None,
-            )
-
-            # Determine API response order: Upstox API may return newest-first or oldest-first.
-            # Check dates to determine order, then ensure chronological order (oldest first).
-            if candles and len(candles) > 1:
-                first_date = candles[0].get("date", "")
-                last_date = candles[-1].get("date", "")
-                # If first date is newer than last date, API returns newest-first (need to reverse)
-                if first_date > last_date:
-                    candles_reversed = list(reversed(candles))
-                    newest_candle_date = candles[0].get("date", "")  # First in original = newest
-                else:
-                    # API returns oldest-first (chronological order)
-                    candles_reversed = candles
-                    newest_candle_date = candles[-1].get("date", "")  # Last = newest
-            else:
-                candles_reversed = candles if candles else []
-                newest_candle_date = candles[0].get("date", "") if candles else ""
-            
-            # Check if newest historical candle matches today
-            historical_includes_today = newest_candle_date.startswith(today_date_str)
-            
-            # Build close prices in chronological order: oldest -> newest
-            close_prices = [c["close"] for c in candles_reversed]
-            
-            if not historical_includes_today and today_live_close > 0:
-                # Today is not in historical; append today's live close as the newest day.
-                # Example: today=10th, historical=1st..9th -> close_prices = [1st..9th, 10th]
-                close_prices.append(today_live_close)
-                print(
-                    "[Master Refresh] EMA",
-                    "trading_symbol=", trading_symbol,
-                    "appended_live_close=", today_live_close,
-                    "newest_historical_date=", newest_candle_date,
-                )
-            elif historical_includes_today and today_live_close > 0:
-                # Today is in historical; replace with live close for accuracy
-                close_prices[-1] = today_live_close
-                print(
-                    "[Master Refresh] EMA",
-                    "trading_symbol=", trading_symbol,
-                    "replaced_today_close=", today_live_close,
-                    "newest_candle_date=", newest_candle_date,
-                )
-
-            # Same logic for EMA5, EMA10, EMA20: full series (oldest → newest).
-            # SMA of oldest n days → then EMA for each following day until today (last = today or live).
-            if len(close_prices) >= 5:
-                ema5 = calculate_ema(close_prices, 5)
-            else:
-                ema5 = 0.0
-            
-            if len(close_prices) >= 10:
-                ema10 = calculate_ema(close_prices, 10)
-            else:
-                ema10 = 0.0
-            
-            if len(close_prices) >= 20:
-                ema20 = calculate_ema(close_prices, 20)  # same formula: SMA(20) then smooth to today
-            else:
-                ema20 = 0.0
-            
-            print(
-                "[Master Refresh] EMA Calculation",
-                "trading_symbol=", trading_symbol,
-                "total_closes=", len(close_prices),
-                "historical_includes_today=", historical_includes_today,
-                "ema5=", ema5,
-                "ema10=", ema10,
-                "ema20=", ema20,
-            )
-
-            # ATH: Always use monthly candles (10 years) for accurate ATH, not just 100 days
-            existing_ath = float(stock.get("ath", 0))
-            try:
-                ath_monthly = await get_monthly_ath(instrument_key, years=10)
-                # Use max of monthly ATH and existing ATH (in case existing was manually set higher)
-                ath = max(ath_monthly, existing_ath) if ath_monthly > 0 else existing_ath
-                print(
-                    "[Master Refresh] ATH from monthly",
-                    "trading_symbol=", trading_symbol,
-                    "ath_monthly=", ath_monthly,
-                    "existing_ath=", existing_ath,
-                    "final_ath=", ath,
-                )
-            except Exception as e:
-                print(f"[Master Refresh] Error fetching monthly ATH for {trading_symbol}: {e}")
-                # Fallback to daily candles max if monthly fails
-                all_highs = [c["high"] for c in candles_reversed]
-                ath_daily = max(all_highs) if all_highs else 0.0
-                ath = max(existing_ath, ath_daily)
-
-            # Prev day O->C %: fetch previous trading day's candle specifically
-            prev_change_pct = 0.0
-            try:
-                # Calculate previous trading day (go back 1 day, if Monday go back 3 days)
-                today = datetime.now()
-                prev_day = today - timedelta(days=1)
-                # If today is Monday (weekday=0), go back 3 days to get Friday
-                if today.weekday() == 0:  # Monday
-                    prev_day = today - timedelta(days=3)
-                elif today.weekday() == 6:  # Sunday (shouldn't happen in trading context, but handle it)
-                    prev_day = today - timedelta(days=2)
-                
-                prev_date_str = prev_day.strftime("%Y-%m-%d")
-                
-                # Fetch just that one day's candle
-                prev_day_candles = await get_historical_candles(
-                    instrument_key,
-                    unit="days",
-                    v3_interval="1",
-                    from_date=prev_date_str,
-                    to_date=prev_date_str,
-                )
-                
-                if prev_day_candles and len(prev_day_candles) > 0:
-                    prev_candle = prev_day_candles[0]  # Should be only one candle
-                    prev_open = float(prev_candle.get("open", 0) or 0)
-                    prev_close = float(prev_candle.get("close", 0) or 0)
-                    if prev_open > 0:
-                        prev_change_pct = round(((prev_close - prev_open) / prev_open) * 100, 2)
-                        print(
-                            "[Master Refresh] Prev day",
-                            "date=", prev_date_str,
-                            "open=", prev_open,
-                            "close=", prev_close,
-                            "change_pct=", prev_change_pct,
-                        )
-            except Exception as e:
-                print("[Master Refresh] Error fetching prev day candle:", repr(e))
-                prev_change_pct = 0.0
-
-            # Current price: use the live close we already fetched for EMA
-            cp = today_live_close if today_live_close > 0 else stock.get("cp", 0)
-
-            # Today O->C % from live_ohlc
-            today_change_pct = 0.0
-            live_ohlc = quote.get("live_ohlc") or {}
-            try:
-                today_open = float(live_ohlc.get("open", 0) or 0)
-                today_close = float(live_ohlc.get("close", 0) or 0)
-                if today_open > 0:
-                    today_change_pct = round(((today_close - today_open) / today_open) * 100, 2)
-            except Exception:
-                today_change_pct = 0.0
-
-            # Choose key column based on schema
-            key_col = "trading_symbol" if "trading_symbol" in stock else "symbol"
-            # Update last_updated timestamp
-            last_updated = datetime.now().isoformat()
-            store.update_row(
-                key_col,
-                trading_symbol,
-                {
-                    "cp": cp,
-                    "ema5": round(ema5, 2),
-                    "ema10": round(ema10, 2),
-                    "ema20": round(ema20, 2),
-                    "ath": round(ath, 2),
-                    "prev_change_pct": prev_change_pct,
-                    "today_change_pct": today_change_pct,
-                    "instrument_key": instrument_key,
-                    "last_updated": last_updated,
-                },
-            )
-            updated_count += 1
-
+            quotes = await get_multiple_quotes(chunk)
+            all_quotes.update(quotes)
+            await asyncio.sleep(0.2) # Small delay between quote batches
         except Exception as e:
-            print("[Master Refresh] Error for", trading_symbol, ":", repr(e))
-            errors.append({"symbol": trading_symbol, "error": str(e)})
+            print(f"[Master Refresh] Quote batch error: {e}")
 
+    # 2. Split into 5 equal parts for parallel processing
+    num_parts = 5
+    avg = len(stocks) // num_parts
+    sublists = []
+    last = 0.0
+
+    while last < len(stocks):
+        size = avg
+        if len(sublists) < len(stocks) % num_parts:
+            size += 1
+        sublists.append(stocks[int(last):int(last + size)])
+        last += size
+
+    # 3. Process sublists in parallel (respecting 429/450 minute limits)
+    print(f"[Master Refresh] Optimized Refresh: {len(stocks)} stocks, 5 workers")
+    chunk_results = await asyncio.gather(*[process_sublist(sub, all_quotes) for sub in sublists])
+    
+    # Flatten results
+    updated_stocks = [stock for sub in chunk_results for stock in sub]
+    
+    # 4. Save all at once
+    store.write_all(updated_stocks)
+    
+    errors = [s.get("trading_symbol") or s.get("symbol") for s in updated_stocks if "refresh_error" in s]
+    
     return {
         "status": "success",
-        "message": f"Refreshed {updated_count}/{len(stocks)} stocks",
+        "message": f"Refreshed {len(updated_stocks) - len(errors)}/{len(stocks)} stocks using optimized parallel workers",
         "errors": errors if errors else None,
     }
 

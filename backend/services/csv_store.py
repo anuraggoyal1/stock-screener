@@ -25,6 +25,9 @@ class CSVStore:
             df = pd.read_csv(self.filepath)
             if df.empty:
                 return []
+            
+            # Use pandas inherent ability to replace NaN with None for object columns
+            df = df.astype(object).where(pd.notnull(df), None)
             return df.to_dict(orient="records")
         except (pd.errors.EmptyDataError, FileNotFoundError):
             return []
@@ -56,7 +59,7 @@ class CSVStore:
     def update_row(self, key_col: str, key_val: str, updates: dict) -> bool:
         """Update a row matching the key column/value with the given updates."""
         df = self.read_df()
-        if df.empty:
+        if df.empty or key_col not in df.columns:
             return False
         mask = df[key_col].astype(str).str.upper() == str(key_val).upper()
         if not mask.any():
@@ -73,9 +76,9 @@ class CSVStore:
         return True
 
     def delete_row(self, key_col: str, key_val: str) -> bool:
-        """Delete a row matching the key column/value."""
+        """Delete ALL rows matching the key column/value."""
         df = self.read_df()
-        if df.empty:
+        if df.empty or key_col not in df.columns:
             return False
         mask = df[key_col].astype(str).str.upper() == str(key_val).upper()
         if not mask.any():
@@ -84,10 +87,64 @@ class CSVStore:
         df.to_csv(self.filepath, index=False)
         return True
 
+    def delete_one(self, criteria: dict) -> bool:
+        """Delete exactly ONE row matching all criteria."""
+        df = self.read_df()
+        if df.empty:
+            return False
+
+        mask = pd.Series([True] * len(df))
+        for col, val in criteria.items():
+            if col in df.columns:
+                mask &= (df[col].astype(str).str.upper() == str(val).upper())
+            else:
+                return False
+
+        if not mask.any():
+            return False
+
+        # Get index of the first matching row
+        idx_to_drop = df[mask].index[0]
+        df = df.drop(idx_to_drop)
+        df.to_csv(self.filepath, index=False)
+        return True
+
+    def update_one(self, criteria: dict, updates: dict) -> bool:
+        """Update exactly ONE row matching all criteria."""
+        df = self.read_df()
+        if df.empty:
+            return False
+
+        mask = pd.Series([True] * len(df))
+        for col, val in criteria.items():
+            if col in df.columns:
+                mask &= (df[col].astype(str).str.upper() == str(val).upper())
+            else:
+                return False
+
+        if not mask.any():
+            return False
+
+        # Get index of the first matching row
+        idx_to_update = df[mask].index[0]
+
+        for col, val in updates.items():
+            if col in df.columns:
+                # Handle numeric type upcasting if necessary
+                if pd.api.types.is_numeric_dtype(df[col].dtype) and val is not None:
+                    try:
+                        val = float(val) if "." in str(val) or isinstance(val, float) else int(val)
+                    except ValueError:
+                        pass
+                df.at[idx_to_update, col] = val
+
+        df.to_csv(self.filepath, index=False)
+        return True
+
     def find_row(self, key_col: str, key_val: str) -> Optional[dict]:
         """Find a single row matching the key column/value."""
         df = self.read_df()
-        if df.empty:
+        if df.empty or key_col not in df.columns:
             return None
         mask = df[key_col].astype(str).str.upper() == str(key_val).upper()
         filtered = df[mask]

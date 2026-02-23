@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import SummaryCard from '../components/SummaryCard';
 import Modal from '../components/Modal';
-import { screenerAPI, ordersAPI, masterAPI } from '../services/api';
+import { screenerAPI, ordersAPI, masterAPI, positionsAPI } from '../services/api';
 
 const formatCurrency = (val) => {
     const num = parseFloat(val);
@@ -70,10 +70,15 @@ export default function Screener({ addToast }) {
         today_change_lt_enabled: true,
     });
 
-    // Buy modal
+    // Buy modal (API order)
     const [buyStock, setBuyStock] = useState(null);
     const [buyForm, setBuyForm] = useState({ quantity: 1, order_type: 'MARKET', price: '' });
     const [buying, setBuying] = useState(false);
+
+    // Add Position modal (manual entry)
+    const [addPosStock, setAddPosStock] = useState(null);
+    const [addPosForm, setAddPosForm] = useState({ quantity: 1, price: '', stoploss: '' });
+    const [addingPos, setAddingPos] = useState(false);
 
     const fetchGroups = async () => {
         try {
@@ -164,6 +169,7 @@ export default function Screener({ addToast }) {
                 quantity: parseInt(buyForm.quantity) || 1,
                 order_type: buyForm.order_type,
                 price: buyForm.order_type === 'LIMIT' ? parseFloat(buyForm.price) : null,
+                curr_price: parseFloat(buyStock.cp),
             });
             addToast(res.data.message, 'success');
             setBuyStock(null);
@@ -172,6 +178,28 @@ export default function Screener({ addToast }) {
             addToast(err.response?.data?.detail || 'Buy order failed', 'error');
         } finally {
             setBuying(false);
+        }
+    };
+
+    const handleAddToPositions = async () => {
+        if (!addPosStock) return;
+        try {
+            setAddingPos(true);
+            const res = await positionsAPI.add({
+                symbol: addPosStock.trading_symbol || addPosStock.symbol,
+                stock_name: addPosStock.stock_name,
+                buy_price: parseFloat(addPosForm.price),
+                quantity: parseInt(addPosForm.quantity) || 1,
+                buy_date: new Date().toISOString().split('T')[0], // Current date
+                stoploss: parseFloat(addPosForm.stoploss),
+            });
+            addToast(`Position added for ${addPosStock.trading_symbol || addPosStock.symbol}`, 'success');
+            setAddPosStock(null);
+            setAddPosForm({ quantity: 1, price: '', stoploss: '' });
+        } catch (err) {
+            addToast(err.response?.data?.detail || 'Failed to add position', 'error');
+        } finally {
+            setAddingPos(false);
         }
     };
 
@@ -254,8 +282,8 @@ export default function Screener({ addToast }) {
                         <input
                             type="checkbox"
                             checked={filters.prev_change_lt_enabled && filters.prev_change_gt_enabled}
-                            onChange={(e) => setFilters({ 
-                                ...filters, 
+                            onChange={(e) => setFilters({
+                                ...filters,
                                 prev_change_lt_enabled: e.target.checked,
                                 prev_change_gt_enabled: e.target.checked
                             })}
@@ -288,8 +316,8 @@ export default function Screener({ addToast }) {
                         <input
                             type="checkbox"
                             checked={filters.today_change_gt_enabled && filters.today_change_lt_enabled}
-                            onChange={(e) => setFilters({ 
-                                ...filters, 
+                            onChange={(e) => setFilters({
+                                ...filters,
                                 today_change_gt_enabled: e.target.checked,
                                 today_change_lt_enabled: e.target.checked
                             })}
@@ -368,7 +396,8 @@ export default function Screener({ addToast }) {
                                 <th>Stock Name</th>
                                 <th>Symbol</th>
                                 <th className="text-right">ATH</th>
-                                <th className="text-right">Current Price</th>
+                                <th className="text-right">Open</th>
+                                <th className="text-right">Price</th>
                                 <th className="text-right">Prev O→C %</th>
                                 <th className="text-right">Today O→C %</th>
                                 <th className="text-right">EMA 5</th>
@@ -391,20 +420,29 @@ export default function Screener({ addToast }) {
                                     <tr key={stock.trading_symbol || stock.symbol}>
                                         <td><span className="badge badge-group">{stock.group || '-'}</span></td>
                                         <td>{stock.stock_name || stock.name || '-'}</td>
-                                        <td className="cell-symbol">{stock.trading_symbol || stock.symbol}</td>
+                                        <td className="cell-symbol">
+                                            <a
+                                                href={`https://www.tradingview.com/chart/?symbol=NSE:${stock.trading_symbol || stock.symbol}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                            >
+                                                {stock.trading_symbol || stock.symbol}
+                                            </a>
+                                        </td>
                                         <td className="text-right cell-muted">{formatCurrency(stock.ath)}</td>
+                                        <td className="text-right cell-muted">{formatCurrency(stock.open)}</td>
                                         <td className={`text-right ${cpClass}`}>{formatCurrency(stock.cp)}</td>
                                         <td className="text-right">
                                             {formatPercent(stock.prev_change_pct)}
                                         </td>
                                         <td
-                                            className={`text-right ${
-                                                todayChange > 0
-                                                    ? 'cell-positive'
-                                                    : todayChange < 0
-                                                        ? 'cell-negative'
-                                                        : 'cell-muted'
-                                            }`}
+                                            className={`text-right ${todayChange > 0
+                                                ? 'cell-positive'
+                                                : todayChange < 0
+                                                    ? 'cell-negative'
+                                                    : 'cell-muted'
+                                                }`}
                                         >
                                             {formatPercent(stock.today_change_pct)}
                                         </td>
@@ -420,7 +458,17 @@ export default function Screener({ addToast }) {
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}
                                         </td>
-                                        <td className="text-center">
+                                        <td className="text-center" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                            <button
+                                                className="btn btn-primary"
+                                                style={{ fontSize: '0.7rem', padding: '6px 10px' }}
+                                                onClick={() => {
+                                                    setAddPosStock(stock);
+                                                    setAddPosForm({ quantity: 1, price: stock.cp, stoploss: stock.open || 0 });
+                                                }}
+                                            >
+                                                ADD POS
+                                            </button>
                                             <button
                                                 className="btn btn-buy"
                                                 onClick={() => {
@@ -512,6 +560,77 @@ export default function Screener({ addToast }) {
                             Estimated cost: {formatCurrency((parseFloat(buyStock.cp) || 0) * (parseInt(buyForm.quantity) || 1))}
                         </p>
                     </>
+                )}
+            </Modal>
+            {/* Add Position Modal (Manual) */}
+            <Modal
+                isOpen={!!addPosStock}
+                onClose={() => setAddPosStock(null)}
+                title={`Add Position: ${addPosStock?.trading_symbol || addPosStock?.symbol}`}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setAddPosStock(null)}>Cancel</button>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleAddToPositions}
+                            disabled={addingPos}
+                        >
+                            {addingPos ? 'Adding...' : 'Add Position'}
+                        </button>
+                    </>
+                }
+            >
+                {addPosStock && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: 'var(--bg-input)', padding: '12px 16px', borderRadius: '8px' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Symbol / Name</div>
+                            <div style={{ fontWeight: 600 }}>{addPosStock.trading_symbol || addPosStock.symbol}</div>
+                            <div style={{ fontSize: '0.85rem' }}>{addPosStock.stock_name}</div>
+                        </div>
+
+                        <div className="form-row">
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Quantity</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="1"
+                                    value={addPosForm.quantity}
+                                    onChange={(e) => setAddPosForm({ ...addPosForm, quantity: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Buy Price</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={addPosForm.price}
+                                    onChange={(e) => setAddPosForm({ ...addPosForm, price: e.target.value })}
+                                />
+                                <div style={{ fontSize: '0.72rem', marginTop: 4, color: 'var(--text-muted)' }}>
+                                    Live: {formatCurrency(addPosStock.cp)}
+                                </div>
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Stoploss</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={addPosForm.stoploss}
+                                    onChange={(e) => setAddPosForm({ ...addPosForm, stoploss: e.target.value })}
+                                />
+                                <div style={{ fontSize: '0.72rem', marginTop: 4, color: 'var(--text-muted)' }}>
+                                    Open: {formatCurrency(addPosStock.open)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <p className="text-muted" style={{ fontSize: '0.8rem', margin: 0 }}>
+                            This will log the position as of <strong>today</strong>. You can override the price if needed.
+                        </p>
+                    </div>
                 )}
             </Modal>
         </div>

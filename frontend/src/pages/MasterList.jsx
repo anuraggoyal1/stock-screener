@@ -249,7 +249,8 @@ export default function MasterList({ addToast }) {
                                 <th>Stock Name</th>
                                 <th>Symbol</th>
                                 <th className="text-right">ATH</th>
-                                <th className="text-right">Current Price</th>
+                                <th className="text-right">Open</th>
+                                <th className="text-right">Price</th>
                                 <th className="text-right">Prev O→C %</th>
                                 <th className="text-right">Today O→C %</th>
                                 <th className="text-right">EMA 5</th>
@@ -272,8 +273,17 @@ export default function MasterList({ addToast }) {
                                 return (
                                     <tr key={stock.trading_symbol}>
                                         <td><span className="badge badge-group">{stock.group}</span></td>
-                                        <td>{stock.stock_name}</td>
-                                        <td className="cell-symbol">{stock.trading_symbol}</td>
+                                        <td><div className="text-truncate" title={stock.stock_name}>{stock.stock_name}</div></td>
+                                        <td className="cell-symbol">
+                                            <a
+                                                href={`https://www.tradingview.com/chart/?symbol=NSE:${stock.trading_symbol}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                            >
+                                                {stock.trading_symbol}
+                                            </a>
+                                        </td>
                                         <td className="text-right cell-muted">
                                             {isAthMissing ? (
                                                 <button
@@ -290,18 +300,18 @@ export default function MasterList({ addToast }) {
                                                 formatCurrency(stock.ath)
                                             )}
                                         </td>
+                                        <td className="text-right cell-muted">{formatCurrency(stock.open)}</td>
                                         <td className={`text-right ${cpClass}`}>{formatCurrency(stock.cp)}</td>
                                         <td className="text-right">
                                             {formatPercent(stock.prev_change_pct)}
                                         </td>
                                         <td
-                                            className={`text-right ${
-                                                parseFloat(stock.today_change_pct) > 0
-                                                    ? 'cell-positive'
-                                                    : parseFloat(stock.today_change_pct) < 0
-                                                        ? 'cell-negative'
-                                                        : 'cell-muted'
-                                            }`}
+                                            className={`text-right ${parseFloat(stock.today_change_pct) > 0
+                                                ? 'cell-positive'
+                                                : parseFloat(stock.today_change_pct) < 0
+                                                    ? 'cell-negative'
+                                                    : 'cell-muted'
+                                                }`}
                                         >
                                             {formatPercent(stock.today_change_pct)}
                                         </td>

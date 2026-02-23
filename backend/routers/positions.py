@@ -25,6 +25,14 @@ class PositionCreate(BaseModel):
     buy_price: float
     buy_date: Optional[str] = None
     quantity: int = 1
+    stoploss: Optional[float] = 0.0
+
+
+class PositionUpdate(BaseModel):
+    buy_price: Optional[float] = None
+    buy_date: Optional[str] = None
+    quantity: Optional[int] = None
+    stoploss: Optional[float] = None
 
 
 @router.get("")
@@ -41,7 +49,8 @@ async def get_positions():
         symbol = pos.get("symbol", "")
 
         # Get current price from master list first, then from API
-        master_stock = master_store.find_row("symbol", symbol)
+        # Handle both old 'symbol' and new 'trading_symbol' column names in master list
+        master_stock = master_store.find_row("trading_symbol", symbol) or master_store.find_row("symbol", symbol)
         if master_stock:
             cp = float(master_stock.get("cp", buy_price))
         else:
@@ -86,7 +95,7 @@ async def add_position(position: PositionCreate):
     """Add a new position."""
     # Look up stock name from master if not provided
     if not position.stock_name:
-        master_stock = master_store.find_row("symbol", position.symbol)
+        master_stock = master_store.find_row("trading_symbol", position.symbol) or master_store.find_row("symbol", position.symbol)
         if master_stock:
             position.stock_name = master_stock.get("stock_name", position.symbol)
         else:
@@ -98,15 +107,62 @@ async def add_position(position: PositionCreate):
         "buy_price": round(position.buy_price, 2),
         "buy_date": position.buy_date or str(date.today()),
         "quantity": position.quantity,
+        "stoploss": position.stoploss or 0.0,
     }
     store.add_row(row)
     return {"status": "success", "data": row, "message": f"Position added for {position.symbol}"}
 
 
 @router.delete("/{symbol}")
-async def delete_position(symbol: str):
-    """Remove a position."""
-    deleted = store.delete_row("symbol", symbol)
+async def delete_position(
+    symbol: str,
+    buy_date: Optional[str] = None,
+    buy_price: Optional[float] = None,
+    quantity: Optional[int] = None
+):
+    """Remove a specific position."""
+    criteria = {"symbol": symbol}
+    if buy_date:
+        criteria["buy_date"] = buy_date
+    if buy_price is not None:
+        criteria["buy_price"] = buy_price
+    if quantity is not None:
+        criteria["quantity"] = quantity
+
+    deleted = store.delete_one(criteria)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Position for {symbol} not found")
+        raise HTTPException(status_code=404, detail=f"Specific position for {symbol} not found")
     return {"status": "success", "message": f"Position for {symbol} removed"}
+
+
+@router.put("/{symbol}")
+async def update_position(
+    symbol: str,
+    update_data: PositionUpdate,
+    original_buy_date: str,
+    original_buy_price: float,
+    original_quantity: int,
+):
+    """Update a specific position identified by original details."""
+    criteria = {
+        "symbol": symbol,
+        "buy_date": original_buy_date,
+        "buy_price": original_buy_price,
+        "quantity": original_quantity,
+    }
+
+    updates = {}
+    if update_data.buy_price is not None:
+        updates["buy_price"] = round(update_data.buy_price, 2)
+    if update_data.buy_date is not None:
+        updates["buy_date"] = update_data.buy_date
+    if update_data.quantity is not None:
+        updates["quantity"] = update_data.quantity
+    if update_data.stoploss is not None:
+        updates["stoploss"] = round(update_data.stoploss, 2)
+
+    updated = store.update_one(criteria, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Position not found with provided original details")
+
+    return {"status": "success", "message": f"Position for {symbol} updated"}

@@ -31,7 +31,8 @@ export const screenerAPI = {
 export const positionsAPI = {
   getAll: () => api.get('/positions'),
   add: (position) => api.post('/positions', position),
-  delete: (symbol) => api.delete(`/positions/${symbol}`),
+  update: (symbol, data, originalDetails) => api.put(`/positions/${symbol}`, data, { params: originalDetails }),
+  delete: (symbol, params) => api.delete(`/positions/${symbol}`, { params }),
 };
 
 // ---- Orders ----

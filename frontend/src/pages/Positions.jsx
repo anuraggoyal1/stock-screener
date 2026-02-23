@@ -17,18 +17,26 @@ export default function Positions({ addToast }) {
 
     // Add position modal
     const [showAddModal, setShowAddModal] = useState(false);
-    const [addForm, setAddForm] = useState({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1 });
+    const [addForm, setAddForm] = useState({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1, stoploss: '' });
 
     // Sell modal
     const [sellPos, setSellPos] = useState(null);
     const [sellForm, setSellForm] = useState({ quantity: '', order_type: 'MARKET', price: '' });
     const [selling, setSelling] = useState(false);
+    const [editPos, setEditPos] = useState(null);
+    const [editForm, setEditForm] = useState({ buy_price: '', buy_date: '', quantity: '', stoploss: '' });
+
+    const [sortConfig, setSortConfig] = useState({ key: 'buy_date', direction: 'desc' });
 
     const fetchData = async () => {
         try {
             setLoading(true);
             const res = await positionsAPI.getAll();
-            setPositions(res.data.data || []);
+            const dataWithIds = (res.data.data || []).map((p, idx) => ({
+                ...p,
+                id: `${p.symbol}-${p.buy_date}-${p.buy_price}-${p.quantity}-${idx}`
+            }));
+            setPositions(dataWithIds);
             setSummary(res.data.summary || {});
         } catch (err) {
             addToast('Failed to load positions: ' + (err.response?.data?.detail || err.message), 'error');
@@ -40,7 +48,6 @@ export default function Positions({ addToast }) {
     useEffect(() => {
         fetchData();
     }, []);
-
     const handleAdd = async () => {
         if (!addForm.symbol || !addForm.buy_price) {
             addToast('Symbol and Buy Price are required', 'error');
@@ -53,13 +60,37 @@ export default function Positions({ addToast }) {
                 buy_price: parseFloat(addForm.buy_price),
                 buy_date: addForm.buy_date || undefined,
                 quantity: parseInt(addForm.quantity) || 1,
+                stoploss: parseFloat(addForm.stoploss) || 0,
             });
             addToast(`Position added for ${addForm.symbol}`, 'success');
             setShowAddModal(false);
-            setAddForm({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1 });
+            setAddForm({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1, stoploss: '' });
             fetchData();
         } catch (err) {
             addToast(err.response?.data?.detail || 'Failed to add position', 'error');
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!editPos) return;
+        try {
+            const originalDetails = {
+                original_buy_date: editPos.buy_date,
+                original_buy_price: editPos.buy_price,
+                original_quantity: editPos.quantity,
+            };
+            await positionsAPI.update(editPos.symbol, {
+                buy_price: parseFloat(editForm.buy_price),
+                buy_date: editForm.buy_date,
+                quantity: parseInt(editForm.quantity),
+                stoploss: parseFloat(editForm.stoploss) || 0,
+            }, originalDetails);
+
+            addToast(`Position for ${editPos.symbol} updated`, 'success');
+            setEditPos(null);
+            fetchData();
+        } catch (err) {
+            addToast(err.response?.data?.detail || 'Failed to update position', 'error');
         }
     };
 
@@ -72,6 +103,8 @@ export default function Positions({ addToast }) {
                 quantity: sellForm.quantity ? parseInt(sellForm.quantity) : undefined,
                 order_type: sellForm.order_type,
                 price: sellForm.order_type === 'LIMIT' ? parseFloat(sellForm.price) : undefined,
+                buy_date: sellPos.buy_date,
+                buy_price: parseFloat(sellPos.buy_price)
             });
             addToast(res.data.message, 'success');
             setSellPos(null);
@@ -83,10 +116,11 @@ export default function Positions({ addToast }) {
         }
     };
 
-    const handleRemove = async (symbol) => {
-        if (!window.confirm(`Remove position for ${symbol}? This will NOT place a sell order.`)) return;
+    const handleRemove = async (pos) => {
+        const { symbol, buy_date, buy_price, quantity } = pos;
+        if (!window.confirm(`Remove specific position for ${symbol} (Qty ${quantity}, Price ${buy_price})? This will NOT place a sell order.`)) return;
         try {
-            await positionsAPI.delete(symbol);
+            await positionsAPI.delete(symbol, { buy_date, buy_price, quantity });
             addToast(`Position for ${symbol} removed`, 'success');
             fetchData();
         } catch (err) {
@@ -94,12 +128,40 @@ export default function Positions({ addToast }) {
         }
     };
 
+    const handleRefresh = async () => {
+        await fetchData();
+        addToast('Positions refreshed', 'success');
+    };
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
     const filtered = positions.filter((p) => {
         const q = search.toLowerCase();
         return p.symbol?.toLowerCase().includes(q) || p.stock_name?.toLowerCase().includes(q);
     });
 
+    const sortedData = [...filtered].sort((a, b) => {
+        if (!sortConfig.key) return 0;
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
     const pnlType = summary.total_pnl >= 0 ? 'positive' : 'negative';
+
+    const getSortClass = (key) => {
+        if (sortConfig.key !== key) return 'sortable';
+        return `sortable sort-${sortConfig.direction}`;
+    };
 
     return (
         <div className="page-enter">
@@ -143,6 +205,15 @@ export default function Positions({ addToast }) {
                     onChange={(e) => setSearch(e.target.value)}
                     id="input-search-positions"
                 />
+                <div className="toolbar-right">
+                    <button
+                        className="btn btn-secondary"
+                        onClick={handleRefresh}
+                        id="btn-refresh-positions"
+                    >
+                        ↻ Refresh
+                    </button>
+                </div>
             </div>
 
             {/* Table */}
@@ -153,7 +224,7 @@ export default function Positions({ addToast }) {
                             <div key={i} className="skeleton skeleton-row" />
                         ))}
                     </div>
-                ) : filtered.length === 0 ? (
+                ) : sortedData.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-icon">💼</div>
                         <div className="empty-state-title">No open positions</div>
@@ -165,31 +236,53 @@ export default function Positions({ addToast }) {
                     <table className="data-table" id="positions-table">
                         <thead>
                             <tr>
-                                <th>Symbol</th>
-                                <th>Stock Name</th>
-                                <th className="text-right">Buy Price</th>
-                                <th>Buy Date</th>
-                                <th className="text-right">Qty</th>
-                                <th className="text-right">Current Price</th>
-                                <th className="text-right">P&L (₹)</th>
-                                <th className="text-right">P&L (%)</th>
+                                <th className={getSortClass('buy_date')} onClick={() => requestSort('buy_date')}>Buy Date</th>
+                                <th className={getSortClass('symbol')} onClick={() => requestSort('symbol')}>Symbol</th>
+                                <th className={getSortClass('stock_name')} onClick={() => requestSort('stock_name')}>Stock Name</th>
+                                <th className={`text-right ${getSortClass('buy_price')}`} onClick={() => requestSort('buy_price')}>Buy Price</th>
+                                <th className={`text-right ${getSortClass('quantity')}`} onClick={() => requestSort('quantity')}>Qty</th>
+                                <th className={`text-right ${getSortClass('current_price')}`} onClick={() => requestSort('current_price')}>Current</th>
+                                <th className={`text-right ${getSortClass('stoploss')}`} onClick={() => requestSort('stoploss')}>SL</th>
+                                <th className={`text-right ${getSortClass('pnl')}`} onClick={() => requestSort('pnl')}>P&L (₹)</th>
+                                <th className={`text-right ${getSortClass('pnl_pct')}`} onClick={() => requestSort('pnl_pct')}>P&L (%)</th>
                                 <th className="text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.map((pos) => {
+                            {sortedData.map((pos) => {
                                 const pnl = parseFloat(pos.pnl);
                                 const pnlPct = parseFloat(pos.pnl_pct);
+                                const cp = parseFloat(pos.current_price);
+                                const buyPrice = parseFloat(pos.buy_price);
+                                const sl = parseFloat(pos.stoploss) || 0;
+
+                                let rowClass = '';
+                                if (cp < sl && sl > 0) {
+                                    rowClass = 'row-stoploss';
+                                } else if (cp < buyPrice) {
+                                    rowClass = 'row-negative';
+                                }
+
                                 const pnlClass = pnl >= 0 ? 'cell-positive' : 'cell-negative';
 
                                 return (
-                                    <tr key={pos.symbol}>
-                                        <td className="cell-symbol">{pos.symbol}</td>
-                                        <td>{pos.stock_name}</td>
-                                        <td className="text-right">{formatCurrency(pos.buy_price)}</td>
+                                    <tr key={pos.id} className={rowClass}>
                                         <td className="cell-muted">{pos.buy_date}</td>
-                                        <td className="text-right fw-600">{parseInt(pos.quantity)}</td>
+                                        <td className="cell-symbol">
+                                            <a
+                                                href={`https://www.tradingview.com/chart/?symbol=NSE:${pos.symbol}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                            >
+                                                {pos.symbol}
+                                            </a>
+                                        </td>
+                                        <td>{pos.stock_name}</td>
+                                        <td className="text-right fw-600">{formatCurrency(pos.buy_price)}</td>
+                                        <td className="text-right">{parseInt(pos.quantity)}</td>
                                         <td className="text-right fw-600">{formatCurrency(pos.current_price)}</td>
+                                        <td className="text-right cell-muted">{formatCurrency(pos.stoploss)}</td>
                                         <td className={`text-right ${pnlClass}`}>
                                             {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)}
                                         </td>
@@ -208,8 +301,23 @@ export default function Positions({ addToast }) {
                                                 SELL
                                             </button>
                                             <button
+                                                className="btn btn-icon"
+                                                onClick={() => {
+                                                    setEditPos(pos);
+                                                    setEditForm({
+                                                        buy_price: pos.buy_price,
+                                                        buy_date: pos.buy_date,
+                                                        quantity: pos.quantity,
+                                                        stoploss: pos.stoploss || 0
+                                                    });
+                                                }}
+                                                title="Edit"
+                                            >
+                                                ✏️
+                                            </button>
+                                            <button
                                                 className="btn btn-icon danger"
-                                                onClick={() => handleRemove(pos.symbol)}
+                                                onClick={() => handleRemove(pos)}
                                                 title="Remove"
                                             >
                                                 🗑️
@@ -277,14 +385,27 @@ export default function Positions({ addToast }) {
                         />
                     </div>
                 </div>
-                <div className="form-group">
-                    <label className="form-label">Buy Date</label>
-                    <input
-                        className="input"
-                        type="date"
-                        value={addForm.buy_date}
-                        onChange={(e) => setAddForm({ ...addForm, buy_date: e.target.value })}
-                    />
+                <div className="form-row">
+                    <div className="form-group">
+                        <label className="form-label">Buy Date</label>
+                        <input
+                            className="input"
+                            type="date"
+                            value={addForm.buy_date}
+                            onChange={(e) => setAddForm({ ...addForm, buy_date: e.target.value })}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Stoploss</label>
+                        <input
+                            className="input"
+                            type="number"
+                            step="0.05"
+                            placeholder="e.g. 1450.00"
+                            value={addForm.stoploss}
+                            onChange={(e) => setAddForm({ ...addForm, stoploss: e.target.value })}
+                        />
+                    </div>
                 </div>
             </Modal>
 
@@ -363,6 +484,67 @@ export default function Positions({ addToast }) {
                                 />
                             </div>
                         )}
+                    </>
+                )}
+            </Modal>
+
+            {/* Edit Position Modal */}
+            <Modal
+                isOpen={!!editPos}
+                onClose={() => setEditPos(null)}
+                title={`Edit Position: ${editPos?.symbol || ''}`}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setEditPos(null)}>Cancel</button>
+                        <button className="btn btn-primary" onClick={handleUpdate}>Save Changes</button>
+                    </>
+                }
+            >
+                {editPos && (
+                    <>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label className="form-label">Buy Price</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={editForm.buy_price}
+                                    onChange={(e) => setEditForm({ ...editForm, buy_price: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Quantity</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="1"
+                                    value={editForm.quantity}
+                                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label className="form-label">Buy Date</label>
+                                <input
+                                    className="input"
+                                    type="date"
+                                    value={editForm.buy_date}
+                                    onChange={(e) => setEditForm({ ...editForm, buy_date: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Stoploss</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={editForm.stoploss}
+                                    onChange={(e) => setEditForm({ ...editForm, stoploss: e.target.value })}
+                                />
+                            </div>
+                        </div>
                     </>
                 )}
             </Modal>

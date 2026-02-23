@@ -12,6 +12,7 @@ import httpx
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from typing import Optional
+import asyncio
 
 from backend.config import UPSTOX_API_KEY, UPSTOX_API_SECRET, UPSTOX_REDIRECT_URI, UPSTOX_ACCESS_TOKEN
 
@@ -146,7 +147,23 @@ async def get_historical_candles(
             f"{HISTORICAL_BASE_URL}/historical-candle/{encoded_key}/{unit}/{v3_interval}/{to_date}/{from_date}",
             headers=_get_headers(),
         )
-        data = response.json()
+        if response.status_code == 429:
+            print(f"[Upstox] Rate limit hit for {instrument_key}. Waiting 1s...")
+            await asyncio.sleep(1)
+            response = await client.get(
+                f"{HISTORICAL_BASE_URL}/historical-candle/{encoded_key}/{unit}/{v3_interval}/{to_date}/{from_date}",
+                headers=_get_headers(),
+            )
+        
+        if response.status_code != 200:
+            print(f"[Upstox] Error {response.status_code} for {instrument_key}: {response.text}")
+            return []
+            
+        try:
+            data = response.json()
+        except Exception as e:
+            print(f"[Upstox] JSON Error for {instrument_key}: {e}")
+            return []
 
     print(
         "[Upstox] historical_candles",
@@ -156,7 +173,6 @@ async def get_historical_candles(
         "interval=", v3_interval,
         "to_date=", to_date,
         "from_date=", from_date,
-        "body=", data,
     )
 
     candles = []
@@ -242,7 +258,24 @@ async def get_current_price(identifier: str) -> dict:
             headers=_get_headers(),
             params={"instrument_key": instrument_key, "interval": "1d"},
         )
-        data = response.json()
+        if response.status_code == 429:
+            print(f"[Upstox] Rate limit hit for {instrument_key}. Waiting 1s...")
+            await asyncio.sleep(1)
+            response = await client.get(
+                f"{HISTORICAL_BASE_URL}/market-quote/ohlc",
+                headers=_get_headers(),
+                params={"instrument_key": instrument_key, "interval": "1d"},
+            )
+            
+        if response.status_code != 200:
+            print(f"[Upstox] Error {response.status_code} for {instrument_key}: {response.text}")
+            return {}
+
+        try:
+            data = response.json()
+        except Exception as e:
+            print(f"[Upstox] JSON Error for {instrument_key}: {e}")
+            return {}
 
     entry = None
     if "data" in data and isinstance(data["data"], dict) and data["data"]:
@@ -253,7 +286,7 @@ async def get_current_price(identifier: str) -> dict:
         "[Upstox] current_price_v3",
         "instrument_key=", instrument_key,
         "status=", response.status_code,
-        "raw_entry=", entry,
+        "raw_entry_keys=", list(entry.keys()) if isinstance(entry, dict) else None,
     )
 
     if not isinstance(entry, dict):
@@ -289,13 +322,7 @@ async def get_current_price(identifier: str) -> dict:
 
 async def get_multiple_quotes(identifiers: list[str]) -> dict:
     """
-    Fetch current prices for multiple symbols.
-
-    Args:
-        identifiers: List of trading symbols or full instrument_keys.
-
-    Returns:
-        Dict mapping symbol -> price dict
+    Fetch current prices for multiple symbols using v3 API.
     """
     if not _is_configured():
         return {
@@ -303,7 +330,6 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
             for ident in identifiers
         }
 
-    # Build instrument_key list, preserving original identifier to map back
     keys = []
     for ident in identifiers:
         if "|" in ident:
@@ -314,30 +340,43 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{BASE_URL}/market-quote/ohlc",
+            f"{HISTORICAL_BASE_URL}/market-quote/ohlc",
             headers=_get_headers(),
-            params={"instrument_key": instrument_keys},
+            params={"instrument_key": instrument_keys, "interval": "1d"},
         )
-        data = response.json()
+        
+        if response.status_code == 429:
+            await asyncio.sleep(1)
+            response = await client.get(
+                f"{HISTORICAL_BASE_URL}/market-quote/ohlc",
+                headers=_get_headers(),
+                params={"instrument_key": instrument_keys, "interval": "1d"},
+            )
 
-    print(
-        "[Upstox] multiple_quotes",
-        "instrument_keys=", instrument_keys,
-        "status=", response.status_code,
-        "body_keys=", list(data.keys()),
-    )
+        if response.status_code != 200:
+            print(f"[Upstox] get_multiple_quotes Error {response.status_code}")
+            return {}
+
+        try:
+            data = response.json()
+        except Exception:
+            return {}
 
     results = {}
-    if "data" in data:
-        for key, quote in data["data"].items():
-            # Use symbol (last part) as map key for convenience
+    if "data" in data and isinstance(data["data"], dict):
+        for key, entry in data["data"].items():
             symbol = key.split("|")[-1] if "|" in key else key
-            ohlc = quote.get("ohlc", {})
+            live_ohlc = entry.get("live_ohlc") or {}
+            last_price = entry.get("last_price", live_ohlc.get("close", 0.0))
+            
             results[symbol] = {
-                "open": ohlc.get("open", 0),
-                "high": ohlc.get("high", 0),
-                "low": ohlc.get("low", 0),
-                "close": ohlc.get("close", 0),
+                "open": live_ohlc.get("open", 0.0),
+                "high": live_ohlc.get("high", 0.0),
+                "low": live_ohlc.get("low", 0.0),
+                "close": live_ohlc.get("close", last_price),
+                "last_price": last_price,
+                "live_ohlc": live_ohlc,
+                "prev_ohlc": entry.get("prev_ohlc") or {}
             }
 
     return results
