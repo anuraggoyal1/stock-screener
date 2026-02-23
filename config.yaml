@@ -1,0 +1,22 @@
+upstox:
+  api_key: e20ae6c8-ccf5-42a1-bbc1-d91041a07a39
+  api_secret: luul29j7ys
+  redirect_uri: https://127.0.0.1:8080/callback
+  access_token: eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiJEVjU2MzYiLCJqdGkiOiI2OTliZGIwNTMyZTM3MzQ0ZmIyMTU1MjkiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc3MTgyMTgyOSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzcxODg0MDAwfQ.BvTMx5W9N7z69Fj4sX7I7yKLNkSx4Fz0m_FvcoPsvoc
+zerodha:
+  api_key: YOUR_ZERODHA_API_KEY
+  api_secret: YOUR_ZERODHA_API_SECRET
+  access_token: ''
+scheduler:
+  update_interval_minutes: 30
+  market_open: 09:15
+  market_close: '15:30'
+app:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+  - http://localhost:5173
+defaults:
+  order_type: MARKET
+  default_quantity: 1
+  exchange: NSE

@@ -1,0 +1,2 @@
+group,stock_name,trading_symbol,ath,cp,ema10,ema20,prev_change_pct,today_change_pct,instrument_key,ema5,last_updated
+BANKING,ICICI BANK LTD.,ICICIBANK,1500.0,1405.7,1401.68,1396.66,0.43,0.41,NSE_EQ|INE090A01021,1401.87,2026-02-23T10:13:55.986680
