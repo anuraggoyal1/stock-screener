@@ -354,7 +354,7 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
             )
 
         if response.status_code != 200:
-            print(f"[Upstox] get_multiple_quotes Error {response.status_code}")
+            print(f"[Upstox] get_multiple_quotes Error {response.status_code}: {response.text}")
             return {}
 
         try:
