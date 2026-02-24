@@ -1,0 +1,16 @@
+Important Considerations for Cloud Run:
+Persistence: Cloud Run services are stateless. Currently, your app saves data to 
+data/master.csv
+ inside the container. This data will be wiped every time the service scales down or restarts. For production, you should migrate to a database (like Cloud SQL or Firestore).
+Secrets: Your 
+config.yaml
+ contains sensitive API keys. In a production environment, you should avoid baking these into the image. Instead:
+Upload secrets to Google Secret Manager.
+Map them to environment variables in Cloud Run.
+Modify 
+backend/config.py
+ to check for environment variables before looking at the YAML file.
+Authentication: If you are using Google Cloud Run, ensure the callback URL in your Upstox/Zerodha dashboards matches your newly deployed frontend URL.
+Would you like me to help you update the 
+backend/config.py
+ to support Environment Variables for easier secret management?

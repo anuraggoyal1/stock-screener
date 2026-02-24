@@ -1,8 +1,8 @@
 upstox:
-  api_key: 1d17ba1f-79e9-4ae8-ba5c-3ed89609150b
-  api_secret: 7oa71h87ec
+  api_key: 
+  api_secret: 
   redirect_uri: https://127.0.0.1:8080/callback
-  access_token: eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiJEVjU2MzYiLCJqdGkiOiI2OTljZjRiYjExZmU1MzdmMjBkOTQ1ZjIiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc3MTg5Mzk0NywiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzcxOTcwNDAwfQ.deGOUaWjK2UP3mlto6B5NHdVsU22iHzX8FeCVeSxzhY
+  access_token: 
 zerodha:
   api_key: YOUR_ZERODHA_API_KEY
   api_secret: YOUR_ZERODHA_API_SECRET
