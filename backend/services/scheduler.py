@@ -29,13 +29,13 @@ def _is_market_hours() -> bool:
 async def refresh_master_data():
     """
     Refresh all stocks in master list with latest prices and EMAs.
-    Only runs during market hours.
+    Uses optimized parallel processing.
     """
     if not _is_market_hours():
         print(f"[Scheduler] Outside market hours ({MARKET_OPEN}-{MARKET_CLOSE}). Skipping refresh.")
         return
 
-    print(f"[Scheduler] Starting master data refresh at {datetime.now().isoformat()}")
+    print(f"[Scheduler] Starting optimized master data refresh at {datetime.now().isoformat()}")
 
     store = CSVStore(MASTER_CSV)
     stocks = store.read_all()
@@ -44,44 +44,44 @@ async def refresh_master_data():
         print("[Scheduler] No stocks in master list.")
         return
 
-    for stock in stocks:
-        symbol = stock["symbol"]
+    # Reuse logic from master.py if possible, but implementing here directly 
+    # to avoid circular imports or messy refactoring for now.
+    from backend.routers.master import process_sublist
+    from backend.services.upstox import get_multiple_quotes
+    
+    # 1. Batch fetch all live quotes first
+    all_quotes = {}
+    symbols = [s.get("trading_symbol") or s.get("symbol") for s in stocks]
+    for i in range(0, len(symbols), 50):
+        chunk = symbols[i:i+50]
         try:
-            # Fetch historical candles for EMA calculation
-            candles = await get_historical_candles(symbol, interval="day", days=60)
-            if not candles:
-                continue
-
-            close_prices = [c["close"] for c in candles]
-
-            # Calculate EMAs
-            ema10 = calculate_ema(close_prices, 10)
-            ema20 = calculate_ema(close_prices, 20)
-
-            # Get current price
-            quote = await get_current_price(symbol)
-            cp = quote.get("close", stock.get("cp", 0))
-
-            # Calculate ATH from historical data
-            all_highs = [c["high"] for c in candles]
-            ath = max(all_highs) if all_highs else stock.get("ath", 0)
-            # Keep the higher of existing ATH and computed one
-            existing_ath = float(stock.get("ath", 0))
-            ath = max(ath, existing_ath)
-
-            # Update the row
-            store.update_row("symbol", symbol, {
-                "cp": cp,
-                "ema10": ema10,
-                "ema20": ema20,
-                "ath": round(ath, 2),
-            })
-
-            print(f"[Scheduler] Updated {symbol}: CP={cp}, EMA10={ema10}, EMA20={ema20}, ATH={ath}")
-
+            quotes = await get_multiple_quotes(chunk)
+            all_quotes.update(quotes)
+            await asyncio.sleep(0.2)
         except Exception as e:
-            print(f"[Scheduler] Error updating {symbol}: {e}")
+            print(f"[Scheduler] Quote batch error: {e}")
 
+    # 2. Split into 5 equal parts for parallel processing
+    num_parts = 5
+    avg = len(stocks) // num_parts
+    sublists = []
+    last = 0.0
+    while last < len(stocks):
+        size = avg
+        if len(sublists) < len(stocks) % num_parts:
+            size += 1
+        sublists.append(stocks[int(last):int(last + size)])
+        last += size
+
+    # 3. Process sublists in parallel
+    chunk_results = await asyncio.gather(*[process_sublist(sub, all_quotes) for sub in sublists])
+    
+    # Flatten results
+    updated_stocks = [stock for sub in chunk_results for stock in sub]
+    
+    # 4. Save all at once
+    store.write_all(updated_stocks)
+    
     print(f"[Scheduler] Master data refresh completed at {datetime.now().isoformat()}")
 
 
