@@ -187,9 +187,9 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         live_ohlc = quote.get("live_ohlc") or {}
         today_date_str = datetime.now().strftime("%Y-%m-%d")
         
-        # 2. Fetch Historical Candles (100 days)
-        # This one call gives us enough for EMA series AND Previous Day O->C
-        candles = await get_historical_candles(instrument_key, days=100)
+        # 2. Fetch Historical Candles (enough to get 100 trading days)
+        # We fetch 160 calendar days to safely get 100+ trading candles.
+        candles = await get_historical_candles(instrument_key, days=160)
         if not candles:
             return stock
         
@@ -202,16 +202,34 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         else:
             candles_reversed = candles or []
         
-        newest_candle_date = candles_reversed[-1].get("date", "") if candles_reversed else ""
-        historical_includes_today = newest_candle_date.startswith(today_date_str)
+        # Slice to exactly 100 candles for EMA calculation as requested
+        if len(candles_reversed) > 100:
+            candles_reversed = candles_reversed[-100:]
+            
+        last_candle_date = candles_reversed[-1].get("date", "")[:10] if candles_reversed else ""
+        
+        # Get quote date from timestamp if available
+        quote_ts = live_ohlc.get("ts", 0)
+        if quote_ts > 0:
+            # Convert ms to sec, then to IST (approximate by adding 5.5 hours or just checking date)
+            quote_date = datetime.fromtimestamp(quote_ts / 1000 + (5.5 * 3600)).strftime("%Y-%m-%d")
+        else:
+            quote_date = today_date_str
+
         close_prices = [c["close"] for c in candles_reversed]
         
-        if not historical_includes_today and today_live_close > 0:
-            close_prices.append(today_live_close)
-        elif historical_includes_today and today_live_close > 0:
-            close_prices[-1] = today_live_close
+        # Only append/update if we have a valid live price
+        if today_live_close > 0:
+            if quote_date > last_candle_date:
+                # New trading session not in historical yet
+                close_prices.append(today_live_close)
+            elif quote_date == last_candle_date:
+                # Update current session with latest live price
+                close_prices[-1] = today_live_close
+            # If quote_date < last_candle_date, historical is ahead or quote is stale, do nothing.
 
-        # 3. EMA Calculation
+        # 3. EMA Calculation: use exactly 100 data points if available
+        # (or whatever we have, if less than 100)
         ema5 = calculate_ema(close_prices, 5) if len(close_prices) >= 5 else 0.0
         ema10 = calculate_ema(close_prices, 10) if len(close_prices) >= 10 else 0.0
         ema20 = calculate_ema(close_prices, 20) if len(close_prices) >= 20 else 0.0
@@ -230,9 +248,11 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         # 5. Extract Prev Day O->C % from captured historical series (Save 1 Request!)
         prev_change_pct = 0.0
         try:
-            # If historical_includes_today is true, the prev day is candles_reversed[-2]
-            # If it's false, the prev day is candles_reversed[-1]
-            prev_idx = -2 if historical_includes_today else -1
+            # If the quote date is today (same as last candle), the true 'previous' day 
+            # is candles_reversed[-2]. Otherwise, historical is only up to yesterday,
+            # so candles_reversed[-1] is the last completed day.
+            is_today_in_history = (quote_date == last_candle_date)
+            prev_idx = -2 if is_today_in_history else -1
             if len(candles_reversed) >= abs(prev_idx):
                 prev_candle = candles_reversed[prev_idx]
                 prev_open = float(prev_candle.get("open", 0) or 0)
