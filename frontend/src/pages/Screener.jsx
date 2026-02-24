@@ -79,6 +79,20 @@ export default function Screener({ addToast }) {
     const [addPosStock, setAddPosStock] = useState(null);
     const [addPosForm, setAddPosForm] = useState({ quantity: 1, price: '', stoploss: '' });
     const [addingPos, setAddingPos] = useState(false);
+    const [refreshingSymbol, setRefreshingSymbol] = useState(null);
+
+    const handleRefreshOne = async (symbol) => {
+        try {
+            setRefreshingSymbol(symbol);
+            await masterAPI.refreshOne(symbol);
+            addToast(`Refreshed ${symbol}`, 'success');
+            await fetchFiltered();
+        } catch (err) {
+            addToast(`Refresh failed for ${symbol}: ` + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setRefreshingSymbol(null);
+        }
+    };
 
     const fetchGroups = async () => {
         try {
@@ -211,10 +225,33 @@ export default function Screener({ addToast }) {
             {/* Summary */}
             <div className="summary-cards">
                 <SummaryCard label="Showing" value={`${stocks.length} / ${total}`} sub="stocks matching filters" />
-                <SummaryCard label="Bullish" value={bullish} type="positive" sub="CP > EMA10 > EMA20" />
-                <SummaryCard label="Bearish" value={bearish} type="negative" sub="CP < EMA10 < EMA20" />
-                <SummaryCard label="Neutral" value={stocks.length - bullish - bearish} sub="Mixed signals" />
+                <SummaryCard label="Bullish" value={bullish} type="positive" size="small" sub="CP > EMA10 > EMA20" />
+                <SummaryCard label="Bearish" value={bearish} type="negative" size="small" sub="CP < EMA10 < EMA20" />
+                <SummaryCard label="Neutral" value={stocks.length - bullish - bearish} size="small" sub="Mixed signals" />
             </div>
+
+            {/* Group Stats based on results */}
+            {stocks.length > 0 && (
+                <div className="group-stats-container">
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '100%', marginBottom: '4px' }}>
+                        Groups in result:
+                    </div>
+                    {Object.entries(
+                        stocks.reduce((acc, s) => {
+                            const g = s.group || 'Ungrouped';
+                            acc[g] = (acc[g] || 0) + 1;
+                            return acc;
+                        }, {})
+                    )
+                        .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                        .map(([name, count]) => (
+                            <div key={name} className="group-stat-item">
+                                <span className="group-stat-name">{name}</span>
+                                <span className="group-stat-count">{count}</span>
+                            </div>
+                        ))}
+                </div>
+            )}
 
             {/* Filter Panel */}
             <div className="filter-panel">
@@ -458,7 +495,15 @@ export default function Screener({ addToast }) {
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}
                                         </td>
-                                        <td className="text-center" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                        <td className="text-center" style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                            <button
+                                                className="btn btn-icon"
+                                                onClick={() => handleRefreshOne(stock.trading_symbol || stock.symbol)}
+                                                title="Refresh Price"
+                                                disabled={refreshingSymbol === (stock.trading_symbol || stock.symbol)}
+                                            >
+                                                {refreshingSymbol === (stock.trading_symbol || stock.symbol) ? '↻' : '↻'}
+                                            </button>
                                             <button
                                                 className="btn btn-primary"
                                                 style={{ fontSize: '0.7rem', padding: '6px 10px' }}

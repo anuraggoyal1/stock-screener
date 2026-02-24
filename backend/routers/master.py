@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
 import asyncio
+import math
 
 from backend.services.csv_store import CSVStore
 from backend.services.upstox import get_historical_candles, get_current_price, get_monthly_ath
@@ -22,6 +23,21 @@ store = CSVStore(MASTER_CSV)
 
 # Cache for NSE_EQ symbol -> (instrument_key, name) lookup
 _nse_instruments_cache: Optional[dict[str, tuple[str, str]]] = None
+
+
+def sanitize_value(v):
+    """Ensure values are JSON compliant (replace NaN/Inf with 0.0)."""
+    if v is None:
+        return None
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
+    if isinstance(v, dict):
+        return {k: sanitize_value(v2) for k, v2 in v.items()}
+    if isinstance(v, list):
+        return [sanitize_value(v2) for v2 in v]
+    return v
 
 
 def get_instrument_info(trading_symbol: str) -> tuple[str, str]:
@@ -275,7 +291,7 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             today_open = stock.get("open", 0.0)
             today_change_pct = 0.0
 
-        return {
+        return sanitize_value({
             **stock,
             "cp": cp,
             "ema5": round(ema5, 2),
@@ -287,12 +303,12 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             "instrument_key": instrument_key,
             "open": today_open,
             "last_updated": datetime.now().isoformat(),
-        }
+        })
 
     except Exception as e:
         print(f"[Master Refresh] Error for {trading_symbol}: {repr(e)}")
         stock["refresh_error"] = str(e)
-        return stock
+        return sanitize_value(stock)
 
 
 async def process_sublist(sublist: List[dict], quotes: dict) -> List[dict]:
@@ -361,6 +377,27 @@ async def refresh_all():
         "status": "success",
         "message": f"Refreshed {len(updated_stocks) - len(errors)}/{len(stocks)} stocks using optimized parallel workers",
         "errors": errors if errors else None,
+    }
+
+
+@router.post("/{symbol}/refresh")
+async def refresh_one_stock(symbol: str):
+    """Refresh data for a single stock."""
+    stock = store.find_row("trading_symbol", symbol) or store.find_row("symbol", symbol)
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+
+    updated_stock = await refresh_stock_data(stock)
+    with open("debug_refresh.log", "a") as f:
+        f.write(f"DEBUG: {symbol} updated_stock={updated_stock}\n")
+    
+    key_col = "trading_symbol" if "trading_symbol" in stock else "symbol"
+    store.update_row(key_col, symbol, updated_stock)
+    
+    return {
+        "status": "success",
+        "message": f"Refreshed {symbol}",
+        "data": updated_stock
     }
 
 

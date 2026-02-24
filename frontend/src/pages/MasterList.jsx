@@ -52,6 +52,7 @@ export default function MasterList({ addToast }) {
     const [editStock, setEditStock] = useState(null);
     const [form, setForm] = useState({ group: '', trading_symbol: '' });
     const [athLoadingSymbol, setAthLoadingSymbol] = useState(null);
+    const [refreshingSymbol, setRefreshingSymbol] = useState(null);
 
     const fetchData = async () => {
         try {
@@ -123,12 +124,25 @@ export default function MasterList({ addToast }) {
         }
     };
 
-    const handleRefresh = async () => {
+    const handleRefreshOne = async (symbol) => {
         try {
-            setRefreshing(true);
-            const res = await masterAPI.refresh();
-            addToast(res.data.message, 'success');
-            fetchData();
+            setRefreshingSymbol(symbol);
+            await masterAPI.refreshOne(symbol);
+            addToast(`Refreshed ${symbol}`, 'success');
+            await fetchData();
+        } catch (err) {
+            addToast(`Refresh failed for ${symbol}: ` + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setRefreshingSymbol(null);
+        }
+    };
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await masterAPI.refresh();
+            addToast('Watchlist refreshed from API', 'success');
+            await fetchData();
         } catch (err) {
             addToast('Refresh failed: ' + (err.response?.data?.detail || err.message), 'error');
         } finally {
@@ -167,7 +181,7 @@ export default function MasterList({ addToast }) {
             {/* Summary Cards */}
             <div className="summary-cards">
                 <SummaryCard label="Total Stocks" value={stocks.length} />
-                <SummaryCard label="Groups" value={uniqueGroups.length} sub={uniqueGroups.join(', ')} />
+                <SummaryCard label="Groups" value={uniqueGroups.length} />
                 <SummaryCard
                     label="Above EMA10"
                     value={stocks.filter((s) => parseFloat(s.cp) > parseFloat(s.ema10)).length}
@@ -246,17 +260,17 @@ export default function MasterList({ addToast }) {
                         <thead>
                             <tr>
                                 <th>Group</th>
-                                <th>Stock Name</th>
+                                <th>Name</th>
                                 <th>Symbol</th>
                                 <th className="text-right">ATH</th>
                                 <th className="text-right">Open</th>
                                 <th className="text-right">Price</th>
-                                <th className="text-right">Prev O→C %</th>
-                                <th className="text-right">Today O→C %</th>
-                                <th className="text-right">EMA 5</th>
-                                <th className="text-right">EMA 10</th>
-                                <th className="text-right">EMA 20</th>
-                                <th className="text-center">Last Updated</th>
+                                <th className="text-right">Prev %</th>
+                                <th className="text-right">Today %</th>
+                                <th className="text-right">E5</th>
+                                <th className="text-right">E10</th>
+                                <th className="text-right">E20</th>
+                                <th className="text-center">Updated</th>
                                 <th className="text-center">Actions</th>
                             </tr>
                         </thead>
@@ -328,20 +342,30 @@ export default function MasterList({ addToast }) {
                                             {formatRelativeTime(stock.last_updated)}
                                         </td>
                                         <td className="text-center">
-                                            <button
-                                                className="btn btn-icon"
-                                                onClick={() => setEditStock({ ...stock })}
-                                                title="Edit"
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                className="btn btn-icon danger"
-                                                onClick={() => handleDelete(stock.trading_symbol)}
-                                                title="Delete"
-                                            >
-                                                🗑️
-                                            </button>
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => handleRefreshOne(stock.trading_symbol)}
+                                                    title="Refresh Price"
+                                                    disabled={refreshingSymbol === stock.trading_symbol}
+                                                >
+                                                    {refreshingSymbol === stock.trading_symbol ? '↻' : '↻'}
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => setEditStock({ ...stock })}
+                                                    title="Edit"
+                                                >
+                                                    ✏️
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon danger"
+                                                    onClick={() => handleDelete(stock.trading_symbol)}
+                                                    title="Delete"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );

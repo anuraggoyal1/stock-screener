@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import SummaryCard from '../components/SummaryCard';
 import Modal from '../components/Modal';
-import { positionsAPI, ordersAPI } from '../services/api';
+import { positionsAPI, ordersAPI, masterAPI } from '../services/api';
 
 const formatCurrency = (val) => {
     const num = parseFloat(val);
@@ -27,6 +27,20 @@ export default function Positions({ addToast }) {
     const [editForm, setEditForm] = useState({ buy_price: '', buy_date: '', quantity: '', stoploss: '' });
 
     const [sortConfig, setSortConfig] = useState({ key: 'buy_date', direction: 'desc' });
+    const [refreshingSymbol, setRefreshingSymbol] = useState(null);
+
+    const handleRefreshOne = async (symbol) => {
+        try {
+            setRefreshingSymbol(symbol);
+            await masterAPI.refreshOne(symbol);
+            addToast(`Refreshed ${symbol}`, 'success');
+            await fetchData();
+        } catch (err) {
+            addToast(`Refresh failed for ${symbol}: ` + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setRefreshingSymbol(null);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -116,9 +130,9 @@ export default function Positions({ addToast }) {
         }
     };
 
-    const handleRemove = async (pos) => {
+    const handleDelete = async (pos) => {
+        if (!window.confirm(`Remove position for ${pos.symbol}?`)) return;
         const { symbol, buy_date, buy_price, quantity } = pos;
-        if (!window.confirm(`Remove specific position for ${symbol} (Qty ${quantity}, Price ${buy_price})? This will NOT place a sell order.`)) return;
         try {
             await positionsAPI.delete(symbol, { buy_date, buy_price, quantity });
             addToast(`Position for ${symbol} removed`, 'success');
@@ -289,46 +303,52 @@ export default function Positions({ addToast }) {
                                         <td className={`text-right ${pnlClass}`}>
                                             {pnlPct >= 0 ? '+' : ''}{pnlPct?.toFixed(2)}%
                                         </td>
-                                        <td className="text-center" style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                                            <button
-                                                className="btn btn-sell"
-                                                onClick={() => {
-                                                    setSellPos(pos);
-                                                    setSellForm({ quantity: pos.quantity, order_type: 'MARKET', price: '' });
-                                                }}
-                                                id={`btn-sell-${pos.symbol}`}
-                                            >
-                                                SELL
-                                            </button>
-                                            <button
-                                                className="btn btn-icon"
-                                                onClick={() => {
-                                                    setEditPos(pos);
-                                                    setEditForm({
-                                                        buy_price: pos.buy_price,
-                                                        buy_date: pos.buy_date,
-                                                        quantity: pos.quantity,
-                                                        stoploss: pos.stoploss || 0
-                                                    });
-                                                }}
-                                                title="Edit"
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                className="btn btn-icon danger"
-                                                onClick={() => handleRemove(pos)}
-                                                title="Remove"
-                                            >
-                                                🗑️
-                                            </button>
+                                        <td className="text-center">
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button
+                                                    className="btn btn-sell"
+                                                    onClick={() => {
+                                                        setSellPos(pos);
+                                                        setSellForm({ quantity: pos.quantity, order_type: 'MARKET', price: '' });
+                                                    }}
+                                                    id={`btn-sell-${pos.symbol}`}
+                                                >
+                                                    SELL
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => handleRefreshOne(pos.symbol)}
+                                                    title="Refresh Price"
+                                                    disabled={refreshingSymbol === pos.symbol}
+                                                >
+                                                    ↻
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => {
+                                                        setEditPos(pos);
+                                                        setEditForm({ ...pos });
+                                                    }}
+                                                    title="Edit"
+                                                >
+                                                    ✏️
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon danger"
+                                                    onClick={() => handleDelete(pos)}
+                                                    title="Delete"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
-                )}
+                )
+                }
             </div>
 
             {/* Add Position Modal */}

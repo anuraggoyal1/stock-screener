@@ -6,8 +6,14 @@ Registers all routers, CORS middleware, and starts the scheduler.
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+import traceback
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from backend.config import CORS_ORIGINS
 from backend.routers import master, screener, positions, orders, tradelog
@@ -47,6 +53,18 @@ app.include_router(orders.router)
 app.include_router(tradelog.router)
 app.include_router(upstox_auth.router)
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global error: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": traceback.format_exc()},
+        headers={
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
 
 @app.get("/")
 async def root():

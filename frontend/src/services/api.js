@@ -18,6 +18,7 @@ export const masterAPI = {
   update: (symbol, data) => api.put(`/master/${symbol}`, data),
   delete: (symbol) => api.delete(`/master/${symbol}`),
   refresh: () => api.post('/master/refresh'),
+  refreshOne: (symbol) => api.post(`/master/${symbol}/refresh`),
   refreshAthFromHistory: (symbol, years = 10) =>
     api.post(`/master/${symbol}/ath-from-history`, null, { params: { years } }),
 };

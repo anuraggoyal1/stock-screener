@@ -1,7 +1,7 @@
 group,stock_name,trading_symbol,ath,cp,ema10,ema20,prev_change_pct,today_change_pct,instrument_key,ema5,last_updated,open,refresh_error
-BANKING,ICICI BANK LTD.,ICICIBANK,1500.0,1384.8,1397.67,1394.96,-0.04,-1.15,NSE_EQ|INE090A01021,1394.78,2026-02-24T22:05:02.492406,1400.9,
-Financial Services,360 ONE WAM Ltd,360ONE,1318.0,1119.4,1122.33,1128.4,1.52,-0.05,NSE_EQ|INE466L01038,1118.62,2026-02-24T22:05:03.763798,1120.0,
-Diversified,3M India Ltd.,3MINDIA,40856.5,35980.0,36212.84,35919.18,-1.05,-0.14,NSE_EQ|INE470A01017,36213.99,2026-02-24T22:05:04.993552,36030.0,
+BANKING,ICICI BANK LTD.,ICICIBANK,1500.0,1384.8,1397.67,1394.96,-0.04,-1.15,NSE_EQ|INE090A01021,1394.78,2026-02-24T23:16:48.536344,1400.9,0.0
+Financial Services,360 ONE WAM Ltd,360ONE,1318.0,1119.4,1122.33,1128.4,1.52,-0.05,NSE_EQ|INE466L01038,1118.62,2026-02-24T23:17:53.896502,1120.0,0.0
+Diversified,3M India Ltd.,3MINDIA,40856.5,35980.0,36212.84,35919.18,-1.05,-0.14,NSE_EQ|INE470A01017,36213.99,2026-02-24T23:02:25.873787,36030.0,
 Capital Goods,ABB India Ltd.,ABB,9149.95,6056.0,5868.31,5716.83,-2.83,2.97,NSE_EQ|INE117A01022,5940.03,2026-02-24T22:05:06.252669,5881.5,
 Construction Materials,ACC Ltd.,ACC,2844.0,1619.1,1635.43,1654.27,-0.61,0.04,NSE_EQ|INE012A01025,1623.49,2026-02-24T22:05:07.516310,1618.5,
 Power,ACME Solar Holdings Ltd.,ACMESOLAR,324.3,231.6,229.56,227.23,-0.22,0.05,NSE_EQ|INE622W01025,230.92,2026-02-24T22:05:08.791975,231.48,
@@ -24,12 +24,12 @@ Financial Services,Aditya Birla Capital Ltd.,ABCAPITAL,369.3,349.3,346.43,346.69
 Consumer Services,Aditya Birla Fashion and Retail Ltd.,ABFRL,364.4,68.8,70.26,70.2,-0.23,-1.29,NSE_EQ|INE647O01011,69.89,2026-02-24T22:05:29.970465,69.7,Expecting value: line 1 column 1 (char 0)
 Consumer Services,Aditya Birla Lifestyle Brands Ltd.,ABLBL,175.0,104.44,108.43,110.09,-1.53,-1.47,NSE_EQ|INE14LE01019,106.77,2026-02-24T22:05:31.187752,106.0,Expecting value: line 1 column 1 (char 0)
 Forest Materials,Aditya Birla Real Estate Ltd.,ABREL,3140.0,1267.8,1334.26,1358.19,0.28,-2.08,NSE_EQ|INE055A01016,1311.61,2026-02-24T22:05:32.495396,1294.7,Expecting value: line 1 column 1 (char 0)
-Financial Services,Aditya Birla Sun Life AMC Ltd.,ABSLAMC,934.6,927.15,891.83,863.19,-0.75,0.78,NSE_EQ|INE404A01024,911.87,2026-02-24T22:05:33.753082,920.0,Expecting value: line 1 column 1 (char 0)
+Financial Services,Aditya Birla Sun Life AMC Ltd.,ABSLAMC,934.6,927.15,891.83,863.19,-0.75,0.78,NSE_EQ|INE404A01024,911.87,2026-02-24T23:05:41.653439,920.0,Expecting value: line 1 column 1 (char 0)
 Oil Gas & Consumable Fuels,Aegis Logistics Ltd.,AEGISLOG,1037.0,699.5,698.45,700.63,1.65,-0.42,NSE_EQ|INE208C01025,697.46,2026-02-24T22:05:34.998904,702.45,Expecting value: line 1 column 1 (char 0)
 Oil Gas & Consumable Fuels,Aegis Vopak Terminals Ltd.,AEGISVOPAK,302.0,227.8,220.23,220.73,6.9,1.15,NSE_EQ|INE0INX01018,222.21,2026-02-24T22:05:36.428612,225.2,Expecting value: line 1 column 1 (char 0)
 Construction,Afcons Infrastructure Ltd.,AFCONS,570.0,308.0,322.24,330.76,-2.22,-1.23,NSE_EQ|INE101I01011,316.04,2026-02-24T22:05:37.677729,311.85,Expecting value: line 1 column 1 (char 0)
 Information Technology,Affle 3i Ltd.,AFFLE,2185.9,1398.5,1521.88,1567.2,0.64,-6.77,NSE_EQ|INE00WC01027,1479.48,2026-02-24T22:05:38.884864,1500.0,Expecting value: line 1 column 1 (char 0)
-Healthcare,Ajanta Pharmaceuticals Ltd.,AJANTPHARM,3485.0,2955.0,2934.26,2889.76,1.31,-1.12,NSE_EQ|INE031B01049,2954.84,2026-02-24T22:05:40.054009,2988.5,Expecting value: line 1 column 1 (char 0)
+Healthcare,Ajanta Pharmaceuticals Ltd.,AJANTPHARM,3485.0,2955.0,2934.26,2889.76,1.31,-1.12,NSE_EQ|INE031B01049,2954.84,2026-02-24T23:18:01.012760,2988.5,Expecting value: line 1 column 1 (char 0)
 Healthcare,Akums Drugs and Pharmaceuticals Ltd.,AKUMS,1175.9,483.7,475.52,466.07,-1.18,2.05,NSE_EQ|INE09XN01023,480.15,2026-02-24T22:05:41.282352,474.0,Expecting value: line 1 column 1 (char 0)
 Consumer Durables,Akzo Nobel India Ltd.,AKZOINDIA,4674.0,3117.8,3040.12,3011.41,0.23,1.03,NSE_EQ|INE133A01011,3075.0,2026-02-24T22:05:42.776843,3086.1,Expecting value: line 1 column 1 (char 0)
 Healthcare,Alembic Pharmaceuticals Ltd.,APLLTD,1303.9,750.85,771.06,779.16,0.57,-1.85,NSE_EQ|INE901L01018,763.89,2026-02-24T22:05:44.051293,765.0,Expecting value: line 1 column 1 (char 0)
@@ -93,7 +93,7 @@ Fast Moving Consumer Goods,Bombay Burmah Trading Corporation Ltd.,BBTC,2975.0,17
 Automobile and Auto Components,Bosch Ltd.,BOSCHLTD,41945.0,35380.0,35547.26,35835.82,0.5,0.17,NSE_EQ|INE323A01026,35375.72,2026-02-24T22:06:56.948689,35320.0,Expecting value: line 1 column 1 (char 0)
 Consumer Services,Brainbees Solutions Ltd.,FIRSTCRY,734.0,212.65,231.82,246.39,-1.04,-1.39,NSE_EQ|INE02RE01045,220.19,2026-02-24T22:06:58.215911,215.65,Expecting value: line 1 column 1 (char 0)
 Realty,Brigade Enterprises Ltd.,BRIGADE,1453.1,729.85,750.55,764.86,1.01,-1.98,NSE_EQ|INE791I01019,741.5,2026-02-24T22:06:59.428948,744.6,Expecting value: line 1 column 1 (char 0)
-Fast Moving Consumer Goods,Britannia Industries Ltd.,BRITANNIA,6469.9,6162.5,6085.7,6026.76,-0.22,1.31,NSE_EQ|INE216A01030,6126.61,2026-02-24T22:07:00.649763,6083.0,Expecting value: line 1 column 1 (char 0)
+Fast Moving Consumer Goods,Britannia Industries Ltd.,BRITANNIA,6469.9,6162.5,6085.7,6026.76,-0.22,1.31,NSE_EQ|INE216A01030,6126.61,2026-02-24T23:06:22.819104,6083.0,Expecting value: line 1 column 1 (char 0)
 Information Technology,C.E. Info Systems Ltd.,MAPMYINDIA,2747.85,1075.4,1156.85,1225.69,0.18,-2.85,NSE_EQ|INE0BV301023,1116.28,2026-02-24T22:07:01.920073,1107.0,Expecting value: line 1 column 1 (char 0)
 Fast Moving Consumer Goods,CCL Products (I) Ltd.,CCL,1074.4,1061.75,1015.43,1000.92,2.8,3.59,NSE_EQ|INE421D01022,1027.41,2026-02-24T22:07:03.183867,1025.0,Expecting value: line 1 column 1 (char 0)
 Power,CESC Ltd.,CESC,212.49,155.72,154.22,153.73,-0.53,0.66,NSE_EQ|INE486A01021,154.96,2026-02-24T22:07:04.493442,154.7,Expecting value: line 1 column 1 (char 0)
@@ -320,7 +320,7 @@ Healthcare,Mankind Pharma Ltd.,MANKIND,3054.8,2054.7,2059.32,2078.96,0.57,0.87,N
 Fast Moving Consumer Goods,Marico Ltd.,MARICO,804.95,810.35,784.28,771.23,0.81,0.97,NSE_EQ|INE196A01026,795.65,2026-02-24T22:07:54.520364,802.55,Expecting value: line 1 column 1 (char 0)
 Automobile and Auto Components,Maruti Suzuki India Ltd.,MARUTI,17370.0,14926.0,15049.48,15154.58,0.15,-0.5,NSE_EQ|INE585B01010,15011.06,2026-02-24T22:07:55.691508,15001.0,Expecting value: line 1 column 1 (char 0)
 Financial Services,Max Financial Services Ltd.,MFSL,1892.5,1843.0,1822.13,1777.11,0.09,-1.18,NSE_EQ|INE180A01020,1845.42,2026-02-24T22:07:56.897149,1865.0,Expecting value: line 1 column 1 (char 0)
-Healthcare,Max Healthcare Institute Ltd.,MAXHEALTH,1314.3,1086.4,1070.86,1053.04,-1.31,0.71,NSE_EQ|INE027H01010,1082.34,2026-02-24T22:07:58.141985,1078.75,Expecting value: line 1 column 1 (char 0)
+Healthcare,Max Healthcare Institute Ltd.,MAXHEALTH,1314.3,1086.4,1070.86,1053.04,-1.31,0.71,NSE_EQ|INE027H01010,1082.34,2026-02-24T23:17:15.525784,1078.75,Expecting value: line 1 column 1 (char 0)
 Capital Goods,Mazagoan Dock Shipbuilders Ltd.,MAZDOCK,3775.0,2256.4,2344.34,2378.87,-3.76,-1.21,NSE_EQ|INE249Z01020,2310.88,2026-02-24T22:07:59.401724,2284.1,Expecting value: line 1 column 1 (char 0)
 Healthcare,Metropolis Healthcare Ltd.,METROPOLIS,3579.9,1892.0,1920.34,1923.45,3.47,-2.33,NSE_EQ|INE112L01020,1909.07,2026-02-24T22:08:00.679069,1937.1,Expecting value: line 1 column 1 (char 0)
 Automobile and Auto Components,Minda Corporation Ltd.,MINDACORP,652.0,573.65,581.65,580.03,-0.95,-1.27,NSE_EQ|INE842C01021,579.43,2026-02-24T22:08:01.918977,581.0,Expecting value: line 1 column 1 (char 0)
