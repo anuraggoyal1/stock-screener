@@ -329,20 +329,20 @@ export default function Screener({ addToast }) {
                         <input
                             className="input"
                             type="number"
-                            placeholder="max"
-                            value={filters.prev_change_lt}
-                            onChange={(e) => setFilters({ ...filters, prev_change_lt: e.target.value })}
-                            disabled={!filters.prev_change_lt_enabled}
+                            placeholder="min"
+                            value={filters.prev_change_gt}
+                            onChange={(e) => setFilters({ ...filters, prev_change_gt: e.target.value })}
+                            disabled={!filters.prev_change_gt_enabled}
                             style={{ width: '70px' }}
                         />
                         <span>to</span>
                         <input
                             className="input"
                             type="number"
-                            placeholder="min"
-                            value={filters.prev_change_gt}
-                            onChange={(e) => setFilters({ ...filters, prev_change_gt: e.target.value })}
-                            disabled={!filters.prev_change_gt_enabled}
+                            placeholder="max"
+                            value={filters.prev_change_lt}
+                            onChange={(e) => setFilters({ ...filters, prev_change_lt: e.target.value })}
+                            disabled={!filters.prev_change_lt_enabled}
                             style={{ width: '70px' }}
                         />
                         <span>%</span>

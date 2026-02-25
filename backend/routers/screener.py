@@ -102,28 +102,26 @@ async def get_filtered_stocks(
         ]
 
     # Yesterday O->C range filtering
-    if prev_change_lt is not None:
-        filtered = [
-            s for s in filtered
-            if _safe_float(s.get("prev_change_pct", 0)) < prev_change_lt
-        ]
-    if prev_change_gt is not None:
-        filtered = [
-            s for s in filtered
-            if _safe_float(s.get("prev_change_pct", 0)) > prev_change_gt
-        ]
+    p_lt = prev_change_lt
+    p_gt = prev_change_gt
+    if p_lt is not None and p_gt is not None:
+        low, high = (p_gt, p_lt) if p_gt < p_lt else (p_lt, p_gt)
+        filtered = [s for s in filtered if low <= _safe_float(s.get("prev_change_pct", 0)) <= high]
+    elif p_lt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("prev_change_pct", 0)) <= p_lt]
+    elif p_gt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("prev_change_pct", 0)) >= p_gt]
 
     # Today O->C range filtering
-    if today_change_gt is not None:
-        filtered = [
-            s for s in filtered
-            if _safe_float(s.get("today_change_pct", 0)) > today_change_gt
-        ]
-    if today_change_lt is not None:
-        filtered = [
-            s for s in filtered
-            if _safe_float(s.get("today_change_pct", 0)) < today_change_lt
-        ]
+    t_lt = today_change_lt
+    t_gt = today_change_gt
+    if t_lt is not None and t_gt is not None:
+        low, high = (t_gt, t_lt) if t_gt < t_lt else (t_lt, t_gt)
+        filtered = [s for s in filtered if low <= _safe_float(s.get("today_change_pct", 0)) <= high]
+    elif t_lt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("today_change_pct", 0)) <= t_lt]
+    elif t_gt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("today_change_pct", 0)) >= t_gt]
 
     # Add signal and ATH distance to each stock
     for stock in filtered:

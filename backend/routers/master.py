@@ -388,8 +388,6 @@ async def refresh_one_stock(symbol: str):
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
 
     updated_stock = await refresh_stock_data(stock)
-    with open("debug_refresh.log", "a") as f:
-        f.write(f"DEBUG: {symbol} updated_stock={updated_stock}\n")
     
     key_col = "trading_symbol" if "trading_symbol" in stock else "symbol"
     store.update_row(key_col, symbol, updated_stock)
