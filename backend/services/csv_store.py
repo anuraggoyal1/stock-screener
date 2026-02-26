@@ -65,12 +65,13 @@ class CSVStore:
         if not mask.any():
             return False
         for col, val in updates.items():
+            if col not in df.columns:
+                df[col] = None  # Create the column if it doesn't exist
             # If the target column exists and has an integer dtype but we are
             # writing a float, upcast the entire column to float to avoid
             # pandas TypeError about invalid value for int64.
-            if col in df.columns:
-                if pd.api.types.is_integer_dtype(df[col].dtype) and isinstance(val, float):
-                    df[col] = df[col].astype(float)
+            if pd.api.types.is_integer_dtype(df[col].dtype) and isinstance(val, float):
+                df[col] = df[col].astype(float)
             df.loc[mask, col] = val
         df.to_csv(self.filepath, index=False)
         return True
@@ -129,14 +130,15 @@ class CSVStore:
         idx_to_update = df[mask].index[0]
 
         for col, val in updates.items():
-            if col in df.columns:
-                # Handle numeric type upcasting if necessary
-                if pd.api.types.is_numeric_dtype(df[col].dtype) and val is not None:
-                    try:
-                        val = float(val) if "." in str(val) or isinstance(val, float) else int(val)
-                    except ValueError:
-                        pass
-                df.at[idx_to_update, col] = val
+            if col not in df.columns:
+                df[col] = None  # Create the column if it doesn't exist
+            # Handle numeric type upcasting if necessary
+            if pd.api.types.is_numeric_dtype(df[col].dtype) and val is not None:
+                try:
+                    val = float(val) if "." in str(val) or isinstance(val, float) else int(val)
+                except ValueError:
+                    pass
+            df.at[idx_to_update, col] = val
 
         df.to_csv(self.filepath, index=False)
         return True

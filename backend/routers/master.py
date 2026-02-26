@@ -15,7 +15,7 @@ import math
 from backend.services.csv_store import CSVStore
 from backend.services.upstox import get_historical_candles, get_current_price, get_monthly_ath
 from backend.services.ema import calculate_ema
-from backend.config import MASTER_CSV, NSE_EQ_JSON
+from backend.config import MASTER_CSV, NSE_EQ_JSON, L5_OPEN_MIN_PCT, L5_OPEN_MAX_PCT
 
 router = APIRouter(prefix="/api/master", tags=["Master Watchlist"])
 
@@ -83,6 +83,7 @@ class StockCreate(BaseModel):
     ema10: Optional[float] = 0.0
     ema20: Optional[float] = 0.0
     open: Optional[float] = 0.0
+    l5_open: Optional[float] = 0.0
 
 
 class StockUpdate(BaseModel):
@@ -94,6 +95,7 @@ class StockUpdate(BaseModel):
     ema10: Optional[float] = None
     ema20: Optional[float] = None
     open: Optional[float] = None
+    l5_open: Optional[float] = None
 
 
 @router.get("")
@@ -148,6 +150,7 @@ async def add_stock(stock: StockCreate):
         "instrument_key": instrument_key,
         "ema5": 0.0,
         "open": 0.0,
+        "l5_open": 0.0,
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
@@ -291,6 +294,37 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             today_open = stock.get("open", 0.0)
             today_change_pct = 0.0
 
+        # 6. Calculate L5 Open
+        l5_open = 0.0
+        try:
+            # Combine historical and today
+            recent_candles = []
+            for c in candles_reversed[-5:]:
+                recent_candles.append({
+                    "open": float(c.get("open") or 0), 
+                    "close": float(c.get("close") or 0), 
+                    "date": c.get("date", "")[:10]
+                })
+            
+            # If today is not in historical, and we have live today_open/today_close, add it
+            if today_live_close > 0 and quote_date > last_candle_date:
+                recent_candles.append({"open": today_open, "close": today_close, "date": quote_date})
+                
+            # Keep only last 5
+            recent_candles = recent_candles[-5:]
+            
+            # Loop from latest backwards to find the first one matching
+            for c in reversed(recent_candles):
+                o = c["open"]
+                c_c = c["close"]
+                if o > 0:
+                    pct = ((c_c - o) / o) * 100
+                    if L5_OPEN_MIN_PCT <= pct <= L5_OPEN_MAX_PCT:
+                        l5_open = o
+                        break
+        except Exception as e:
+            l5_open = stock.get("l5_open", 0.0)
+
         return sanitize_value({
             **stock,
             "cp": cp,
@@ -302,6 +336,7 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             "today_change_pct": today_change_pct,
             "instrument_key": instrument_key,
             "open": today_open,
+            "l5_open": round(l5_open, 2),
             "last_updated": datetime.now().isoformat(),
         })
 

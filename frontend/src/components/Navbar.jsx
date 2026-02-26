@@ -6,6 +6,7 @@ const tabs = [
     { path: '/screener', label: 'Screener', icon: '🔍' },
     { path: '/positions', label: 'Positions', icon: '💼' },
     { path: '/tradelog', label: 'Trade Log', icon: '📊' },
+    { path: '/backtest', label: 'Backtest', icon: '🧪' },
     { path: '/upstox', label: 'Upstox Token', icon: '🔑' },
 ];
 

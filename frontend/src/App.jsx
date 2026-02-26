@@ -6,6 +6,7 @@ import Screener from './pages/Screener';
 import Positions from './pages/Positions';
 import TradeLog from './pages/TradeLog';
 import UpstoxToken from './pages/UpstoxToken';
+import Backtest from './pages/Backtest';
 
 function App() {
   const { toasts, addToast, removeToast } = useToast();
@@ -20,6 +21,7 @@ function App() {
             <Route path="/screener" element={<Screener addToast={addToast} />} />
             <Route path="/positions" element={<Positions addToast={addToast} />} />
             <Route path="/tradelog" element={<TradeLog addToast={addToast} />} />
+            <Route path="/backtest" element={<Backtest addToast={addToast} />} />
             <Route path="/upstox" element={<UpstoxToken addToast={addToast} />} />
           </Routes>
         </main>

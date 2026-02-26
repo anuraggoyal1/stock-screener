@@ -68,6 +68,10 @@ export default function Screener({ addToast }) {
         today_change_gt: '0.5',  // Default: Today O->C > 0.5% (lower bound)
         today_change_lt: '1.5',  // Default: Today O->C < 1.5% (upper bound) - between 0.5 to 1.5%
         today_change_lt_enabled: true,
+        l5_open_dist_gt_enabled: false,
+        l5_open_dist_gt: '0',
+        l5_open_dist_lt_enabled: false,
+        l5_open_dist_lt: '5',
     });
 
     // Buy modal (API order)
@@ -130,6 +134,12 @@ export default function Screener({ addToast }) {
             if (filters.today_change_lt_enabled && filters.today_change_lt !== '') {
                 params.today_change_lt = parseFloat(filters.today_change_lt);
             }
+            if (filters.l5_open_dist_gt_enabled && filters.l5_open_dist_gt !== '') {
+                params.l5_open_dist_gt = parseFloat(filters.l5_open_dist_gt);
+            }
+            if (filters.l5_open_dist_lt_enabled && filters.l5_open_dist_lt !== '') {
+                params.l5_open_dist_lt = parseFloat(filters.l5_open_dist_lt);
+            }
 
             const res = await screenerAPI.getFiltered(params);
             setStocks(res.data.data || []);
@@ -170,6 +180,10 @@ export default function Screener({ addToast }) {
             today_change_gt: '',
             today_change_lt_enabled: false,
             today_change_lt: '',
+            l5_open_dist_gt_enabled: false,
+            l5_open_dist_gt: '',
+            l5_open_dist_lt_enabled: false,
+            l5_open_dist_lt: '',
         });
         setTimeout(fetchFiltered, 0);
     };
@@ -384,6 +398,42 @@ export default function Screener({ addToast }) {
                         <span>%</span>
                     </label>
 
+                    {/* L5 Open distance range */}
+                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            type="checkbox"
+                            checked={filters.l5_open_dist_gt_enabled && filters.l5_open_dist_lt_enabled}
+                            onChange={(e) => setFilters({
+                                ...filters,
+                                l5_open_dist_gt_enabled: e.target.checked,
+                                l5_open_dist_lt_enabled: e.target.checked
+                            })}
+                        />
+                        <span>CP vs L5 Open %:</span>
+                        <input
+                            className="input"
+                            type="number"
+                            step="0.1"
+                            placeholder="min"
+                            value={filters.l5_open_dist_gt}
+                            onChange={(e) => setFilters({ ...filters, l5_open_dist_gt: e.target.value })}
+                            disabled={!filters.l5_open_dist_gt_enabled}
+                            style={{ width: '70px' }}
+                        />
+                        <span>to</span>
+                        <input
+                            className="input"
+                            type="number"
+                            step="0.1"
+                            placeholder="max"
+                            value={filters.l5_open_dist_lt}
+                            onChange={(e) => setFilters({ ...filters, l5_open_dist_lt: e.target.value })}
+                            disabled={!filters.l5_open_dist_lt_enabled}
+                            style={{ width: '70px' }}
+                        />
+                        <span>%</span>
+                    </label>
+
                     {/* Legacy filters */}
                     <label className="filter-checkbox">
                         <input
@@ -435,6 +485,8 @@ export default function Screener({ addToast }) {
                                 <th className="text-right">ATH</th>
                                 <th className="text-right">Open</th>
                                 <th className="text-right">Price</th>
+                                <th className="text-right">L5 Open</th>
+                                <th className="text-right">L5 Dist %</th>
                                 <th className="text-right">Prev O→C %</th>
                                 <th className="text-right">Today O→C %</th>
                                 <th className="text-right">EMA 5</th>
@@ -456,7 +508,11 @@ export default function Screener({ addToast }) {
                                 return (
                                     <tr key={stock.trading_symbol || stock.symbol}>
                                         <td><span className="badge badge-group">{stock.group || '-'}</span></td>
-                                        <td>{stock.stock_name || stock.name || '-'}</td>
+                                        <td>
+                                            <div className="text-truncate" title={stock.stock_name || stock.name || '-'}>
+                                                {stock.stock_name || stock.name || '-'}
+                                            </div>
+                                        </td>
                                         <td className="cell-symbol">
                                             <a
                                                 href={`https://www.tradingview.com/chart/?symbol=NSE:${stock.trading_symbol || stock.symbol}`}
@@ -470,6 +526,10 @@ export default function Screener({ addToast }) {
                                         <td className="text-right cell-muted">{formatCurrency(stock.ath)}</td>
                                         <td className="text-right cell-muted">{formatCurrency(stock.open)}</td>
                                         <td className={`text-right ${cpClass}`}>{formatCurrency(stock.cp)}</td>
+                                        <td className="text-right cell-muted">{formatCurrency(stock.l5_open)}</td>
+                                        <td className={`text-right ${parseFloat(stock.l5_open_dist_pct) > 0 ? 'cell-positive' : parseFloat(stock.l5_open_dist_pct) < 0 ? 'cell-negative' : 'cell-muted'}`}>
+                                            {formatPercent(stock.l5_open_dist_pct)}
+                                        </td>
                                         <td className="text-right">
                                             {formatPercent(stock.prev_change_pct)}
                                         </td>

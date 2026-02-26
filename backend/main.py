@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from backend.config import CORS_ORIGINS
-from backend.routers import master, screener, positions, orders, tradelog
+from backend.routers import master, screener, positions, orders, tradelog, backtest
 from backend.routers import upstox_auth
 from backend.services.scheduler import start_scheduler, stop_scheduler
 
@@ -51,6 +51,7 @@ app.include_router(screener.router)
 app.include_router(positions.router)
 app.include_router(orders.router)
 app.include_router(tradelog.router)
+app.include_router(backtest.router)
 app.include_router(upstox_auth.router)
 
 @app.exception_handler(Exception)

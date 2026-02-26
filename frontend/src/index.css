@@ -571,12 +571,12 @@ a {
 }
 
 .data-table th {
-  padding: 10px 12px;
-  font-size: 0.72rem;
+  padding: 8px 4px;
+  font-size: 0.68rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -586,7 +586,7 @@ a {
 .data-table th.sortable {
   cursor: pointer;
   position: relative;
-  padding-right: 28px;
+  padding-right: 20px;
 }
 
 .data-table th.sortable:hover {
@@ -597,7 +597,7 @@ a {
 .data-table th.sortable::after {
   content: '↕';
   position: absolute;
-  right: 12px;
+  right: 8px;
   opacity: 0.3;
   font-size: 0.8em;
 }
@@ -625,8 +625,8 @@ a {
 }
 
 .data-table td {
-  padding: 8px 12px;
-  font-size: 0.82rem;
+  padding: 6px 4px;
+  font-size: 0.78rem;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -738,7 +738,7 @@ a {
 }
 
 .text-truncate {
-  max-width: 150px;
+  max-width: 100px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

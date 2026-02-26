@@ -55,4 +55,9 @@ export const upstoxAPI = {
   saveToken: (access_token) => api.post('/upstox/save-token', { access_token }),
 };
 
+// ---- Backtest ----
+export const backtestAPI = {
+  run: (params) => api.get('/backtest/run', { params }),
+};
+
 export default api;

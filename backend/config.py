@@ -45,6 +45,10 @@ DEFAULT_ORDER_TYPE = config["defaults"]["order_type"]
 DEFAULT_QUANTITY = config["defaults"]["default_quantity"]
 DEFAULT_EXCHANGE = config["defaults"]["exchange"]
 
+# Screener
+L5_OPEN_MIN_PCT = config.get("screener", {}).get("l5_open_min_pct", 1.0)
+L5_OPEN_MAX_PCT = config.get("screener", {}).get("l5_open_max_pct", 5.0)
+
 # CSV file paths
 MASTER_CSV = DATA_DIR / "master.csv"
 POSITIONS_CSV = DATA_DIR / "positions.csv"

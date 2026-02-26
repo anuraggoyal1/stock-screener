@@ -30,6 +30,8 @@ async def get_filtered_stocks(
     prev_change_gt: Optional[float] = None,  # Yesterday O->C > X% (for range filtering)
     today_change_gt: Optional[float] = None,  # Today O->C > X%
     today_change_lt: Optional[float] = None,  # Today O->C < X% (for range filtering)
+    l5_open_dist_gt: Optional[float] = None,  # CP vs L5 Open distance > X%
+    l5_open_dist_lt: Optional[float] = None,  # CP vs L5 Open distance < X%
 ):
     """
     Get filtered stocks based on technical criteria.
@@ -138,11 +140,28 @@ async def get_filtered_stocks(
         else:
             stock["signal"] = "Neutral"
 
-        # ATH distance
-        if ath > 0:
-            stock["ath_distance_pct"] = round(((cp - ath) / ath) * 100, 2)
+        # L5 Open distance
+        l5_open = _safe_float(stock.get("l5_open"))
+        if l5_open > 0:
+            stock["l5_open_dist_pct"] = round(((cp - l5_open) / l5_open) * 100, 2)
         else:
-            stock["ath_distance_pct"] = 0.0
+            stock["l5_open_dist_pct"] = 0.0
+            
+    # L5 Open distance range filtering
+    l5_lt = l5_open_dist_lt
+    l5_gt = l5_open_dist_gt
+    # Only filter if l5_open is greater than 0, meaning it qualified initially, or just filter blindly based on the value?
+    # If l5_open is 0, l5_open_dist_pct is 0. If user searches for > 1, 0.0 will naturally fall out. 
+    # But if user searches for > -5, 0.0 would show up. Better to ignore those where l5_open is 0 if filtering is applied.
+    if l5_lt is not None or l5_gt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("l5_open")) > 0]
+        if l5_lt is not None and l5_gt is not None:
+            low, high = (l5_gt, l5_lt) if l5_gt < l5_lt else (l5_lt, l5_gt)
+            filtered = [s for s in filtered if low <= _safe_float(s.get("l5_open_dist_pct", 0)) <= high]
+        elif l5_lt is not None:
+            filtered = [s for s in filtered if _safe_float(s.get("l5_open_dist_pct", 0)) <= l5_lt]
+        elif l5_gt is not None:
+            filtered = [s for s in filtered if _safe_float(s.get("l5_open_dist_pct", 0)) >= l5_gt]
 
     return {
         "status": "success",
