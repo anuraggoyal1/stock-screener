@@ -15,7 +15,7 @@ import traceback
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from backend.config import CORS_ORIGINS
+from backend.config import CORS_ORIGINS, AUTO_REFRESH
 from backend.routers import master, screener, positions, orders, tradelog, backtest
 from backend.routers import upstox_auth
 from backend.services.scheduler import start_scheduler, stop_scheduler
@@ -24,9 +24,14 @@ from backend.services.scheduler import start_scheduler, stop_scheduler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan — start/stop scheduler."""
-    start_scheduler()
+    if AUTO_REFRESH:
+        start_scheduler()
+        logger.info("[Scheduler] Auto-refresh ENABLED — periodic refresh is running.")
+    else:
+        logger.info("[Scheduler] Auto-refresh DISABLED — set 'auto_refresh: true' in config.yaml to enable.")
     yield
-    stop_scheduler()
+    if AUTO_REFRESH:
+        stop_scheduler()
 
 
 app = FastAPI(

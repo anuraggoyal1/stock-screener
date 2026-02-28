@@ -32,6 +32,7 @@ async def get_filtered_stocks(
     today_change_lt: Optional[float] = None,  # Today O->C < X% (for range filtering)
     l5_open_dist_gt: Optional[float] = None,  # CP vs L5 Open distance > X%
     l5_open_dist_lt: Optional[float] = None,  # CP vs L5 Open distance < X%
+    w_ema4_gt_w_ema5: Optional[bool] = None,  # Weekly EMA4 > Weekly EMA5
 ):
     """
     Get filtered stocks based on technical criteria.
@@ -101,6 +102,13 @@ async def get_filtered_stocks(
         filtered = [
             s for s in filtered
             if _ema_comparison(s, ema_comparison)
+        ]
+
+    # Weekly EMA4 > Weekly EMA5 (dedicated boolean filter)
+    if w_ema4_gt_w_ema5:
+        filtered = [
+            s for s in filtered
+            if _safe_float(s.get("w_ema4", 0)) > _safe_float(s.get("w_ema5", 0))
         ]
 
     # Yesterday O->C range filtering
@@ -204,6 +212,8 @@ def _ema_comparison(stock: dict, comparison: str) -> bool:
     ema5 = _safe_float(stock.get("ema5", 0))
     ema10 = _safe_float(stock.get("ema10", 0))
     ema20 = _safe_float(stock.get("ema20", 0))
+    w_ema4 = _safe_float(stock.get("w_ema4", 0))
+    w_ema5 = _safe_float(stock.get("w_ema5", 0))
 
     if comparison == "ema5_gt_ema10":
         return ema5 > ema10
@@ -217,4 +227,6 @@ def _ema_comparison(stock: dict, comparison: str) -> bool:
         return ema10 < ema20
     elif comparison == "ema5_lt_ema20":
         return ema5 < ema20
+    elif comparison == "w_ema4_gt_w_ema5":
+        return w_ema4 > w_ema5
     return False

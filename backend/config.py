@@ -34,6 +34,7 @@ ZERODHA_ACCESS_TOKEN = config["zerodha"]["access_token"]
 SCHEDULER_INTERVAL = config["scheduler"]["update_interval_minutes"]
 MARKET_OPEN = config["scheduler"]["market_open"]
 MARKET_CLOSE = config["scheduler"]["market_close"]
+AUTO_REFRESH = config["scheduler"].get("auto_refresh", False)  # Periodic auto-refresh (default: disabled)
 
 # App settings
 APP_HOST = config["app"]["host"]

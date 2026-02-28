@@ -45,7 +45,8 @@ export default function MasterList({ addToast }) {
     const [stocks, setStocks] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
+    const [refreshingDaily, setRefreshingDaily] = useState(false);
+    const [refreshingWeekly, setRefreshingWeekly] = useState(false);
     const [search, setSearch] = useState('');
     const [groupFilter, setGroupFilter] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -84,14 +85,14 @@ export default function MasterList({ addToast }) {
             addToast(`${form.trading_symbol} added to watchlist`, 'success');
             setShowAddModal(false);
             setForm({ group: '', trading_symbol: '' });
-            setRefreshing(true);
+            setRefreshingDaily(true);
             try {
                 const res = await masterAPI.refresh();
                 addToast(res.data.message || 'Data refreshed', 'success');
             } catch (refreshErr) {
                 addToast('Refresh failed: ' + (refreshErr.response?.data?.detail || refreshErr.message), 'error');
             } finally {
-                setRefreshing(false);
+                setRefreshingDaily(false);
             }
             await fetchData();
         } catch (err) {
@@ -138,7 +139,7 @@ export default function MasterList({ addToast }) {
     };
 
     const handleRefresh = async () => {
-        setRefreshing(true);
+        setRefreshingDaily(true);
         try {
             await masterAPI.refresh();
             addToast('Watchlist refreshed from API', 'success');
@@ -146,7 +147,33 @@ export default function MasterList({ addToast }) {
         } catch (err) {
             addToast('Refresh failed: ' + (err.response?.data?.detail || err.message), 'error');
         } finally {
-            setRefreshing(false);
+            setRefreshingDaily(false);
+        }
+    };
+
+    const handleRefreshWeekly = async () => {
+        setRefreshingWeekly(true);
+        try {
+            await masterAPI.refreshWeekly();
+            addToast('Weekly data refreshed from API', 'success');
+            await fetchData();
+        } catch (err) {
+            addToast('Refresh failed: ' + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setRefreshingWeekly(false);
+        }
+    };
+
+    const handleRefreshOneWeekly = async (symbol) => {
+        try {
+            setRefreshingSymbol(symbol);
+            await masterAPI.refreshOneWeekly(symbol);
+            addToast(`Refreshed weekly data for ${symbol}`, 'success');
+            await fetchData();
+        } catch (err) {
+            addToast(`Refresh failed for ${symbol}: ` + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setRefreshingSymbol(null);
         }
     };
 
@@ -230,11 +257,19 @@ export default function MasterList({ addToast }) {
                 <div className="toolbar-right">
                     <button
                         className="btn btn-secondary"
+                        onClick={handleRefreshWeekly}
+                        disabled={refreshingWeekly}
+                        style={{ marginRight: '8px' }}
+                    >
+                        {refreshingWeekly ? '↻ Refreshing W-Data...' : '↻ W-Data & ATH'}
+                    </button>
+                    <button
+                        className="btn btn-secondary"
                         onClick={handleRefresh}
-                        disabled={refreshing}
+                        disabled={refreshingDaily}
                         id="btn-refresh"
                     >
-                        {refreshing ? '↻ Refreshing...' : '↻ Refresh Data'}
+                        {refreshingDaily ? '↻ Refreshing...' : '↻ Refresh Data'}
                     </button>
                 </div>
             </div>
@@ -270,6 +305,8 @@ export default function MasterList({ addToast }) {
                                 <th className="text-right">E5</th>
                                 <th className="text-right">E10</th>
                                 <th className="text-right">E20</th>
+                                <th className="text-right">W-E4</th>
+                                <th className="text-right">W-E5</th>
                                 <th className="text-center">Updated</th>
                                 <th className="text-center">Actions</th>
                             </tr>
@@ -338,6 +375,12 @@ export default function MasterList({ addToast }) {
                                         <td className={`text-right ${ema10 > ema20 ? 'cell-positive' : 'cell-muted'}`}>
                                             {formatCurrency(stock.ema20)}
                                         </td>
+                                        <td className="text-right cell-muted">
+                                            {formatCurrency(stock.w_ema4)}
+                                        </td>
+                                        <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
+                                            {formatCurrency(stock.w_ema5)}
+                                        </td>
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}
                                         </td>
@@ -349,7 +392,15 @@ export default function MasterList({ addToast }) {
                                                     title="Refresh Price"
                                                     disabled={refreshingSymbol === stock.trading_symbol}
                                                 >
-                                                    {refreshingSymbol === stock.trading_symbol ? '↻' : '↻'}
+                                                    ↻
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => handleRefreshOneWeekly(stock.trading_symbol)}
+                                                    title="Refresh Weekly (W-E4, W-E5, ATH)"
+                                                    disabled={refreshingSymbol === stock.trading_symbol}
+                                                >
+                                                    📅
                                                 </button>
                                                 <button
                                                     className="btn btn-icon"

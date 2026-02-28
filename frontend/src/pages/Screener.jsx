@@ -47,31 +47,31 @@ export default function Screener({ addToast }) {
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
 
-    // Filter state with defaults
+    // Filter state with defaults — only CP > 80% ATH and W-EMA4 > W-EMA5 on by default
     const [filters, setFilters] = useState({
         cp_gt_ema10: false,
         ema10_gt_ema20: false,
         near_ath_pct: '',
-        group: '',  // All Groups (default)
+        group: '',
         min_cp: '',
         max_cp: '',
-        // New filters with defaults
         cp_gt_ath_pct_enabled: true,
-        cp_gt_ath_pct: '80',  // Default: CP > 80% of ATH
-        ema_comparison_enabled: true,
-        ema_comparison: 'ema5_gt_ema10',  // Default: EMA5 > EMA10
-        prev_change_lt_enabled: true,
-        prev_change_lt: '0',  // Default: Yesterday O->C < 0% (upper bound)
-        prev_change_gt: '-2',  // Default: Yesterday O->C > -2% (lower bound) - between 0 to -2%
-        prev_change_gt_enabled: true,
-        today_change_gt_enabled: true,
-        today_change_gt: '0.5',  // Default: Today O->C > 0.5% (lower bound)
-        today_change_lt: '1.5',  // Default: Today O->C < 1.5% (upper bound) - between 0.5 to 1.5%
-        today_change_lt_enabled: true,
+        cp_gt_ath_pct: '80',
+        ema_comparison_enabled: false,
+        ema_comparison: 'ema5_gt_ema10',
+        prev_change_lt_enabled: false,
+        prev_change_lt: '0',
+        prev_change_gt: '-2',
+        prev_change_gt_enabled: false,
+        today_change_gt_enabled: false,
+        today_change_gt: '0.5',
+        today_change_lt: '1.5',
+        today_change_lt_enabled: false,
         l5_open_dist_gt_enabled: false,
         l5_open_dist_gt: '0',
         l5_open_dist_lt_enabled: false,
         l5_open_dist_lt: '5',
+        w_ema4_gt_w_ema5: true,
     });
 
     // Buy modal (API order)
@@ -140,6 +140,9 @@ export default function Screener({ addToast }) {
             if (filters.l5_open_dist_lt_enabled && filters.l5_open_dist_lt !== '') {
                 params.l5_open_dist_lt = parseFloat(filters.l5_open_dist_lt);
             }
+            if (filters.w_ema4_gt_w_ema5) {
+                params.w_ema4_gt_w_ema5 = true;
+            }
 
             const res = await screenerAPI.getFiltered(params);
             setStocks(res.data.data || []);
@@ -184,6 +187,7 @@ export default function Screener({ addToast }) {
             l5_open_dist_gt: '',
             l5_open_dist_lt_enabled: false,
             l5_open_dist_lt: '',
+            w_ema4_gt_w_ema5: false,
         });
         setTimeout(fetchFiltered, 0);
     };
@@ -207,6 +211,28 @@ export default function Screener({ addToast }) {
         } finally {
             setBuying(false);
         }
+    };
+
+    const handleDownloadCSV = () => {
+        if (!stocks || stocks.length === 0) {
+            addToast('No stocks to download', 'error');
+            return;
+        }
+
+        // All symbols comma-separated on a single row, e.g.: NSE:RELIANCE,NSE:TCS,NSE:INFY
+        const csvContent = stocks.map(s => `NSE:${s.trading_symbol || s.symbol}`).join(',');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `screener_export_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        addToast(`Downloaded ${stocks.length} symbols`, 'success');
     };
 
     const handleAddToPositions = async () => {
@@ -325,6 +351,7 @@ export default function Screener({ addToast }) {
                             <option value="ema5_lt_ema10">EMA5 &lt; EMA10</option>
                             <option value="ema10_lt_ema20">EMA10 &lt; EMA20</option>
                             <option value="ema5_lt_ema20">EMA5 &lt; EMA20</option>
+                            <option value="w_ema4_gt_w_ema5">W-EMA4 &gt; W-EMA5</option>
                         </select>
                     </label>
 
@@ -451,12 +478,28 @@ export default function Screener({ addToast }) {
                         />
                         EMA10 &gt; EMA20
                     </label>
+                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '6px', background: filters.w_ema4_gt_w_ema5 ? 'rgba(99, 179, 237, 0.12)' : 'transparent', border: filters.w_ema4_gt_w_ema5 ? '1px solid rgba(99,179,237,0.35)' : '1px solid transparent', transition: 'all 0.2s' }}>
+                        <input
+                            type="checkbox"
+                            checked={filters.w_ema4_gt_w_ema5}
+                            onChange={(e) => setFilters({ ...filters, w_ema4_gt_w_ema5: e.target.checked })}
+                        />
+                        <span style={{ fontWeight: filters.w_ema4_gt_w_ema5 ? 600 : 400 }}>W-EMA4 &gt; W-EMA5</span>
+                    </label>
 
                     <button className="btn btn-primary" onClick={applyFilters} id="btn-apply-filters">
                         Apply Filters
                     </button>
                     <button className="btn btn-secondary" onClick={resetFilters} id="btn-reset-filters">
                         Reset
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={handleDownloadCSV}
+                        disabled={stocks.length === 0}
+                        style={{ marginLeft: 'auto' }}
+                    >
+                        ⬇️ Download CSV
                     </button>
                 </div>
             </div>
@@ -492,6 +535,8 @@ export default function Screener({ addToast }) {
                                 <th className="text-right">EMA 5</th>
                                 <th className="text-right">EMA 10</th>
                                 <th className="text-right">EMA 20</th>
+                                <th className="text-right">W-EMA 4</th>
+                                <th className="text-right">W-EMA 5</th>
                                 <th className="text-center">Last Updated</th>
                                 <th className="text-center">Action</th>
                             </tr>
@@ -551,6 +596,12 @@ export default function Screener({ addToast }) {
                                         </td>
                                         <td className={`text-right ${ema10 > ema20 ? 'cell-positive' : 'cell-muted'}`}>
                                             {formatCurrency(stock.ema20)}
+                                        </td>
+                                        <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
+                                            {formatCurrency(stock.w_ema4)}
+                                        </td>
+                                        <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
+                                            {formatCurrency(stock.w_ema5)}
                                         </td>
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}

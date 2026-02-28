@@ -84,6 +84,8 @@ class StockCreate(BaseModel):
     ema20: Optional[float] = 0.0
     open: Optional[float] = 0.0
     l5_open: Optional[float] = 0.0
+    w_ema4: Optional[float] = 0.0
+    w_ema5: Optional[float] = 0.0
 
 
 class StockUpdate(BaseModel):
@@ -96,6 +98,8 @@ class StockUpdate(BaseModel):
     ema20: Optional[float] = None
     open: Optional[float] = None
     l5_open: Optional[float] = None
+    w_ema4: Optional[float] = None
+    w_ema5: Optional[float] = None
 
 
 @router.get("")
@@ -151,6 +155,8 @@ async def add_stock(stock: StockCreate):
         "ema5": 0.0,
         "open": 0.0,
         "l5_open": 0.0,
+        "w_ema4": 0.0,
+        "w_ema5": 0.0,
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
@@ -297,21 +303,17 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         # 6. Calculate L5 Open
         l5_open = 0.0
         try:
-            # Combine historical and today
-            recent_candles = []
-            for c in candles_reversed[-5:]:
-                recent_candles.append({
-                    "open": float(c.get("open") or 0), 
-                    "close": float(c.get("close") or 0), 
+            # Exclude current day from historical candles to only consider previous days
+            historical_only = [
+                {
+                    "open": float(c.get("open") or 0),
+                    "close": float(c.get("close") or 0),
                     "date": c.get("date", "")[:10]
-                })
+                }
+                for c in candles_reversed if c.get("date", "")[:10] != quote_date
+            ]
             
-            # If today is not in historical, and we have live today_open/today_close, add it
-            if today_live_close > 0 and quote_date > last_candle_date:
-                recent_candles.append({"open": today_open, "close": today_close, "date": quote_date})
-                
-            # Keep only last 5
-            recent_candles = recent_candles[-5:]
+            recent_candles = historical_only[-5:]
             
             # Loop from latest backwards to find the first one matching
             for c in reversed(recent_candles):
@@ -458,4 +460,172 @@ async def refresh_ath_from_history(symbol: str, years: int = 10):
         "status": "success",
         "message": f"ATH updated for {trading_symbol}",
         "data": updated,
+    }
+
+
+async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
+    """Helper to fetch weekly data for W-EMA4 and W-EMA5 calculation."""
+    trading_symbol = stock.get("trading_symbol") or stock.get("symbol")
+    if not trading_symbol:
+        return stock
+
+    instrument_key = stock.get("instrument_key") or f"NSE_EQ|{trading_symbol}"
+    
+    try:
+        if not quote:
+            quote = await get_current_price(instrument_key)
+            
+        today_live_close = float(quote.get("last_price") or quote.get("close") or 0)
+        
+        # Fetch 3 years of weekly candles (~156 weeks = 1095 calendar days) for solid EMA warmup.
+        # More history ensures the EMA is well-settled before we reach the candles we care about.
+        candles = await get_historical_candles(instrument_key, days=1095, unit="weeks", v3_interval="1")
+        if not candles:
+            return stock
+            
+        # Ensure chronological order (oldest → newest)
+        if len(candles) > 1 and candles[0].get("date", "") > candles[-1].get("date", ""):
+            candles = list(reversed(candles))
+
+        print(f"[Master Weekly] {trading_symbol}: received {len(candles)} weekly candles")
+            
+        close_prices = [c["close"] for c in candles]
+        
+        # Determine today's date and the date of the last (most recent) weekly candle.
+        # Weekly candles from Upstox are labelled with the Monday of that week.
+        live_ohlc = quote.get("live_ohlc") or {}
+        quote_ts = live_ohlc.get("ts", 0)
+        if quote_ts > 0:
+            quote_date = datetime.fromtimestamp(quote_ts / 1000 + (5.5 * 3600)).strftime("%Y-%m-%d")
+        else:
+            quote_date = datetime.now().strftime("%Y-%m-%d")
+            
+        last_candle_date = candles[-1].get("date", "")[:10] if candles else ""
+        
+        # For weekly candles the last_candle_date is the Monday of the current (or last completed)
+        # week, so a simple date comparison doesn't work.  We compare ISO week numbers instead:
+        # - Same ISO week → update the last candle with today's live close (mid-week update).
+        # - Newer week     → append a fresh candle (a new week has started).
+        if today_live_close > 0 and last_candle_date:
+            try:
+                q_iso = datetime.strptime(quote_date, "%Y-%m-%d").isocalendar()        # (year, week, day)
+                lc_iso = datetime.strptime(last_candle_date, "%Y-%m-%d").isocalendar() # (year, week, day)
+                if (q_iso[0], q_iso[1]) > (lc_iso[0], lc_iso[1]):
+                    # Quote is from a newer week — append
+                    close_prices.append(today_live_close)
+                elif (q_iso[0], q_iso[1]) == (lc_iso[0], lc_iso[1]):
+                    # Same week — update the last candle with live price
+                    close_prices[-1] = today_live_close
+                # If quote is somehow older than the last candle, don't touch the list.
+            except Exception:
+                # Fallback: just update last candle
+                close_prices[-1] = today_live_close
+
+        # ── Stability fix ───────────────────────────────────────────────────────
+        # The API may return a slightly different candle count each call (e.g. 58
+        # vs 62 depending on server-side rounding of the date window).  If the
+        # seed SMA is computed from a different number of candles the EMA chain
+        # shifts.  Solution: always pass the FULL history for warmup so EMA is
+        # well-settled, then limit to the last 52 candles for the final
+        # calculation — a fixed-length window produces identical results every run.
+        EMA_WINDOW = 52
+        if len(close_prices) > EMA_WINDOW:
+            close_prices = close_prices[-EMA_WINDOW:]
+                
+        w_ema4 = calculate_ema(close_prices, 4) if len(close_prices) >= 4 else 0.0
+        w_ema5 = calculate_ema(close_prices, 5) if len(close_prices) >= 5 else 0.0
+        
+        cp = today_live_close if today_live_close > 0 else float(stock.get("cp", 0))
+        ath = float(stock.get("ath", 0))
+        if cp > ath:
+            ath = cp
+
+        print(f"[Master Weekly] {trading_symbol}: close_prices count={len(close_prices)}, W-EMA4={round(w_ema4,2)}, W-EMA5={round(w_ema5,2)}")
+
+        return sanitize_value({
+            **stock,
+            "cp": cp,
+            "ath": round(ath, 2),
+            "w_ema4": round(w_ema4, 2),
+            "w_ema5": round(w_ema5, 2),
+            "last_updated": datetime.now().isoformat(),
+        })
+    except Exception as e:
+        print(f"[Master Weekly Refresh] Error for {trading_symbol}: {repr(e)}")
+        stock["refresh_error"] = str(e)
+        return sanitize_value(stock)
+
+
+async def process_sublist_weekly(sublist: List[dict], quotes: dict) -> List[dict]:
+    results = []
+    for stock in sublist:
+        symbol = stock.get("trading_symbol") or stock.get("symbol")
+        quote = quotes.get(symbol)
+        updated_stock = await refresh_weekly_stock_data(stock, quote)
+        results.append(updated_stock)
+        await asyncio.sleep(0.8)
+    return results
+
+
+@router.post("/refresh-weekly")
+async def refresh_all_weekly():
+    """Refresh weekly data (W-EMA4, W-EMA5) for all stocks."""
+    stocks = store.read_all()
+    if not stocks:
+        return {"status": "success", "message": "No stocks to refresh"}
+
+    all_quotes = {}
+    from backend.services.upstox import get_multiple_quotes
+    
+    symbols = [s.get("trading_symbol") or s.get("symbol") for s in stocks]
+    for i in range(0, len(symbols), 50):
+        chunk = symbols[i:i+50]
+        try:
+            quotes = await get_multiple_quotes(chunk)
+            all_quotes.update(quotes)
+            await asyncio.sleep(0.2)
+        except Exception as e:
+            print(f"[Master Weekly] Quote batch error: {e}")
+
+    num_parts = 5
+    avg = len(stocks) // num_parts
+    sublists = []
+    last = 0.0
+
+    while last < len(stocks):
+        size = avg
+        if len(sublists) < len(stocks) % num_parts:
+            size += 1
+        sublists.append(stocks[int(last):int(last + size)])
+        last += size
+
+    print(f"[Master Weekly] Optimized Refresh: {len(stocks)} stocks, 5 workers")
+    chunk_results = await asyncio.gather(*[process_sublist_weekly(sub, all_quotes) for sub in sublists])
+    
+    updated_stocks = [stock for sub in chunk_results for stock in sub]
+    store.write_all(updated_stocks)
+    errors = [s.get("trading_symbol") or s.get("symbol") for s in updated_stocks if "refresh_error" in s]
+    
+    return {
+        "status": "success",
+        "message": f"Refreshed {len(updated_stocks) - len(errors)}/{len(stocks)} stocks weekly data",
+        "errors": errors if errors else None,
+    }
+
+
+@router.post("/{symbol}/refresh-weekly")
+async def refresh_one_stock_weekly(symbol: str):
+    """Refresh weekly data for a single stock."""
+    stock = store.find_row("trading_symbol", symbol) or store.find_row("symbol", symbol)
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+
+    updated_stock = await refresh_weekly_stock_data(stock)
+    key_col = "trading_symbol" if "trading_symbol" in stock else "symbol"
+    store.update_row(key_col, symbol, updated_stock)
+    
+    return {
+        "status": "success",
+        "message": f"Refreshed weekly data for {symbol}",
+        "data": updated_stock
     }
