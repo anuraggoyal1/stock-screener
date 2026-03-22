@@ -174,8 +174,8 @@ a {
 
 .app-content {
   flex: 1;
-  padding: 24px 32px;
-  max-width: 1440px;
+  padding: 16px 20px;
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
 }
@@ -564,6 +564,7 @@ a {
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .data-table thead {

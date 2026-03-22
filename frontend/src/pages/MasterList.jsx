@@ -307,6 +307,7 @@ export default function MasterList({ addToast }) {
                                 <th className="text-right">E20</th>
                                 <th className="text-right">W-E4</th>
                                 <th className="text-right">W-E5</th>
+                                <th className="text-right">W_O{'-'}{'>'}C %</th>
                                 <th className="text-center">Updated</th>
                                 <th className="text-center">Actions</th>
                             </tr>
@@ -380,6 +381,9 @@ export default function MasterList({ addToast }) {
                                         </td>
                                         <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
                                             {formatCurrency(stock.w_ema5)}
+                                        </td>
+                                        <td className={`text-right ${parseFloat(stock.w_OtoC_pct_change) > 0 ? 'cell-positive' : parseFloat(stock.w_OtoC_pct_change) < 0 ? 'cell-negative' : 'cell-muted'}`}>
+                                            {formatPercent(stock.w_OtoC_pct_change)}
                                         </td>
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}

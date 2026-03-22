@@ -86,6 +86,8 @@ class StockCreate(BaseModel):
     l5_open: Optional[float] = 0.0
     w_ema4: Optional[float] = 0.0
     w_ema5: Optional[float] = 0.0
+    w_open: Optional[float] = 0.0
+    w_OtoC_pct_change: Optional[float] = 0.0
 
 
 class StockUpdate(BaseModel):
@@ -100,6 +102,8 @@ class StockUpdate(BaseModel):
     l5_open: Optional[float] = None
     w_ema4: Optional[float] = None
     w_ema5: Optional[float] = None
+    w_open: Optional[float] = None
+    w_OtoC_pct_change: Optional[float] = None
 
 
 @router.get("")
@@ -157,6 +161,8 @@ async def add_stock(stock: StockCreate):
         "l5_open": 0.0,
         "w_ema4": 0.0,
         "w_ema5": 0.0,
+        "w_open": 0.0,
+        "w_OtoC_pct_change": 0.0,
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
@@ -282,8 +288,9 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
                 prev_candle = candles_reversed[prev_idx]
                 prev_open = float(prev_candle.get("open", 0) or 0)
                 prev_close = float(prev_candle.get("close", 0) or 0)
-                if prev_open > 0:
-                    prev_change_pct = round(((prev_close - prev_open) / prev_open) * 100, 2)
+                if prev_close > 0:
+                    # Formula: ((close - open) / close) * 100
+                    prev_change_pct = round(((prev_close - prev_open) / prev_close) * 100, 2)
         except Exception:
             prev_change_pct = 0.0
 
@@ -294,8 +301,9 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         today_open = float(live_ohlc.get("open", 0) or 0)
         try:
             today_close = float(live_ohlc.get("close", 0) or 0)
-            if today_open > 0:
-                today_change_pct = round(((today_close - today_open) / today_open) * 100, 2)
+            if today_close > 0:
+                # Formula: ((close - open) / close) * 100
+                today_change_pct = round(((today_close - today_open) / today_close) * 100, 2)
         except Exception:
             today_open = stock.get("open", 0.0)
             today_change_pct = 0.0
@@ -542,12 +550,24 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
 
         print(f"[Master Weekly] {trading_symbol}: close_prices count={len(close_prices)}, W-EMA4={round(w_ema4,2)}, W-EMA5={round(w_ema5,2)}")
 
+        # Calculate weekly O->C change %
+        # Last candle in candles is the current week's Monday open
+        # We need the open price of the current week.
+        w_otoc_pct = 0.0
+        if candles:
+            current_week_open = float(candles[-1].get("open", 0) or 0)
+            if current_week_open > 0:
+                # Formula: ((close - open) / close) * 100
+                w_otoc_pct = round(((cp - current_week_open) / cp) * 100, 2)
+
         return sanitize_value({
             **stock,
             "cp": cp,
             "ath": round(ath, 2),
             "w_ema4": round(w_ema4, 2),
             "w_ema5": round(w_ema5, 2),
+            "w_open": round(current_week_open, 2),
+            "w_OtoC_pct_change": w_otoc_pct,
             "last_updated": datetime.now().isoformat(),
         })
     except Exception as e:

@@ -49,7 +49,6 @@ export default function Screener({ addToast }) {
 
     // Filter state with defaults — only CP > 80% ATH and W-EMA4 > W-EMA5 on by default
     const [filters, setFilters] = useState({
-        cp_gt_ema10: false,
         ema10_gt_ema20: false,
         near_ath_pct: '',
         group: '',
@@ -72,6 +71,12 @@ export default function Screener({ addToast }) {
         l5_open_dist_lt_enabled: false,
         l5_open_dist_lt: '5',
         w_ema4_gt_w_ema5: true,
+        w_otoc_gt: '1',
+        w_otoc_gt_enabled: true,
+        w_otoc_lt: '5',
+        w_otoc_lt_enabled: true,
+        sortBy: 'group',
+        sortDir: 'asc'
     });
 
     // Buy modal (API order)
@@ -109,7 +114,6 @@ export default function Screener({ addToast }) {
         try {
             setLoading(true);
             const params = {};
-            if (filters.cp_gt_ema10) params.cp_gt_ema10 = true;
             if (filters.ema10_gt_ema20) params.ema10_gt_ema20 = true;
             if (filters.near_ath_pct) params.near_ath_pct = parseFloat(filters.near_ath_pct);
             if (filters.group) params.group = filters.group;
@@ -143,9 +147,41 @@ export default function Screener({ addToast }) {
             if (filters.w_ema4_gt_w_ema5) {
                 params.w_ema4_gt_w_ema5 = true;
             }
+            if (filters.w_otoc_gt_enabled && filters.w_otoc_gt !== '') {
+                params.w_otoc_gt = parseFloat(filters.w_otoc_gt);
+            }
+            if (filters.w_otoc_lt_enabled && filters.w_otoc_lt !== '') {
+                params.w_otoc_lt = parseFloat(filters.w_otoc_lt);
+            }
 
             const res = await screenerAPI.getFiltered(params);
-            setStocks(res.data.data || []);
+            let data = res.data.data || [];
+
+            // Client-side sorting
+            if (filters.sortBy) {
+                data.sort((a, b) => {
+                    let valA = a[filters.sortBy];
+                    let valB = b[filters.sortBy];
+
+                    // Handle special case for W_O->C% which is w_OtoC_pct_change
+                    if (filters.sortBy === 'w_OtoC_pct_change') {
+                        valA = parseFloat(valA) || 0;
+                        valB = parseFloat(valB) || 0;
+                    } else if (typeof valA === 'string') {
+                        valA = valA.toLowerCase();
+                        valB = valB.toLowerCase();
+                    } else {
+                        valA = parseFloat(valA) || 0;
+                        valB = parseFloat(valB) || 0;
+                    }
+
+                    if (valA < valB) return filters.sortDir === 'asc' ? -1 : 1;
+                    if (valA > valB) return filters.sortDir === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            setStocks(data);
             setTotal(res.data.total || 0);
         } catch (err) {
             addToast('Failed to load screener: ' + (err.response?.data?.detail || err.message), 'error');
@@ -165,32 +201,53 @@ export default function Screener({ addToast }) {
 
     const resetFilters = () => {
         setFilters({
-            cp_gt_ema10: false,
             ema10_gt_ema20: false,
             near_ath_pct: '',
             group: '',
             min_cp: '',
             max_cp: '',
-            cp_gt_ath_pct_enabled: false,
-            cp_gt_ath_pct: '',
+            cp_gt_ath_pct_enabled: true,
+            cp_gt_ath_pct: '80',
             ema_comparison_enabled: false,
-            ema_comparison: '',
+            ema_comparison: 'ema5_gt_ema10',
             prev_change_lt_enabled: false,
-            prev_change_lt: '',
+            prev_change_lt: '0',
+            prev_change_gt: '-2',
             prev_change_gt_enabled: false,
-            prev_change_gt: '',
             today_change_gt_enabled: false,
-            today_change_gt: '',
+            today_change_gt: '0.5',
+            today_change_lt: '1.5',
             today_change_lt_enabled: false,
-            today_change_lt: '',
             l5_open_dist_gt_enabled: false,
-            l5_open_dist_gt: '',
+            l5_open_dist_gt: '0',
             l5_open_dist_lt_enabled: false,
-            l5_open_dist_lt: '',
-            w_ema4_gt_w_ema5: false,
+            l5_open_dist_lt: '5',
+            w_ema4_gt_w_ema5: true,
+            w_otoc_gt: '1',
+            w_otoc_gt_enabled: true,
+            w_otoc_lt: '5',
+            w_otoc_lt_enabled: true,
+            sortBy: 'group',
+            sortDir: 'asc'
         });
         setTimeout(fetchFiltered, 0);
     };
+
+    const toggleSort = (field) => {
+        setFilters(prev => ({
+            ...prev,
+            sortBy: field,
+            sortDir: prev.sortBy === field && prev.sortDir === 'asc' ? 'desc' : 'asc'
+        }));
+        // We need to re-fetch/re-sort. fetchFiltered works fine because it uses 'filters' state
+        // but since setState is async, we should probably trigger it in a useEffect or use a temporary var
+    };
+
+    useEffect(() => {
+        // Re-sort when sortBy/sortDir changes without hitting API if we want, 
+        // but fetchFiltered currently hits API. Let's just call fetchFiltered.
+        if (!loading) fetchFiltered();
+    }, [filters.sortBy, filters.sortDir]);
 
     const handleBuy = async () => {
         if (!buyStock) return;
@@ -293,214 +350,150 @@ export default function Screener({ addToast }) {
                 </div>
             )}
 
+
             {/* Filter Panel */}
-            <div className="filter-panel">
-                <div className="filter-panel-title">Screening Criteria</div>
-                <div className="filter-row" style={{ flexWrap: 'wrap', gap: '12px', alignItems: 'flex-start' }}>
-                    {/* Group Filter */}
-                    <select
-                        className="select"
-                        value={filters.group}
-                        onChange={(e) => setFilters({ ...filters, group: e.target.value })}
-                        style={{ minWidth: '150px' }}
-                    >
-                        <option value="">All Groups</option>
-                        {groups.map((g) => (
-                            <option key={g} value={g}>{g}</option>
-                        ))}
-                    </select>
+            <div className="filter-panel" style={{ padding: '16px' }}>
+                <div className="filter-row" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.2fr 180px', gap: '16px' }}>
 
-                    {/* CP > X% of ATH */}
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.cp_gt_ath_pct_enabled}
-                            onChange={(e) => setFilters({ ...filters, cp_gt_ath_pct_enabled: e.target.checked })}
-                        />
-                        <span>CP &gt;</span>
-                        <input
-                            className="input"
-                            type="number"
-                            placeholder="%"
-                            value={filters.cp_gt_ath_pct}
-                            onChange={(e) => setFilters({ ...filters, cp_gt_ath_pct: e.target.value })}
-                            disabled={!filters.cp_gt_ath_pct_enabled}
-                            style={{ width: '80px' }}
-                        />
-                        <span>% of ATH</span>
-                    </label>
-
-                    {/* EMA Comparison */}
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.ema_comparison_enabled}
-                            onChange={(e) => setFilters({ ...filters, ema_comparison_enabled: e.target.checked })}
-                        />
+                    {/* Column 1: Groups & Core */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <select
                             className="select"
-                            value={filters.ema_comparison}
-                            onChange={(e) => setFilters({ ...filters, ema_comparison: e.target.value })}
-                            disabled={!filters.ema_comparison_enabled}
-                            style={{ minWidth: '150px' }}
+                            value={filters.group}
+                            onChange={(e) => setFilters({ ...filters, group: e.target.value })}
+                            style={{ width: '100%' }}
                         >
-                            <option value="">Select...</option>
-                            <option value="ema5_gt_ema10">EMA5 &gt; EMA10</option>
-                            <option value="ema10_gt_ema20">EMA10 &gt; EMA20</option>
-                            <option value="ema5_gt_ema20">EMA5 &gt; EMA20</option>
-                            <option value="ema5_lt_ema10">EMA5 &lt; EMA10</option>
-                            <option value="ema10_lt_ema20">EMA10 &lt; EMA20</option>
-                            <option value="ema5_lt_ema20">EMA5 &lt; EMA20</option>
-                            <option value="w_ema4_gt_w_ema5">W-EMA4 &gt; W-EMA5</option>
+                            <option value="">All Groups</option>
+                            {groups.map((g) => (
+                                <option key={g} value={g}>{g}</option>
+                            ))}
                         </select>
-                    </label>
 
-                    {/* Yesterday O->C range (between 0 to -2%) */}
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.prev_change_lt_enabled && filters.prev_change_gt_enabled}
-                            onChange={(e) => setFilters({
-                                ...filters,
-                                prev_change_lt_enabled: e.target.checked,
-                                prev_change_gt_enabled: e.target.checked
-                            })}
-                        />
-                        <span>Yesterday O→C:</span>
-                        <input
-                            className="input"
-                            type="number"
-                            placeholder="min"
-                            value={filters.prev_change_gt}
-                            onChange={(e) => setFilters({ ...filters, prev_change_gt: e.target.value })}
-                            disabled={!filters.prev_change_gt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>to</span>
-                        <input
-                            className="input"
-                            type="number"
-                            placeholder="max"
-                            value={filters.prev_change_lt}
-                            onChange={(e) => setFilters({ ...filters, prev_change_lt: e.target.value })}
-                            disabled={!filters.prev_change_lt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>%</span>
-                    </label>
+                        <label className="filter-checkbox">
+                            <input
+                                type="checkbox"
+                                checked={filters.w_ema4_gt_w_ema5}
+                                onChange={(e) => setFilters({ ...filters, w_ema4_gt_w_ema5: e.target.checked })}
+                            />
+                            <span>W-EMA4 {'>'} W-EMA5</span>
+                        </label>
 
-                    {/* Today O->C range (between 0.5 to 1.5%) */}
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.today_change_gt_enabled && filters.today_change_lt_enabled}
-                            onChange={(e) => setFilters({
-                                ...filters,
-                                today_change_gt_enabled: e.target.checked,
-                                today_change_lt_enabled: e.target.checked
-                            })}
-                        />
-                        <span>Today O→C:</span>
-                        <input
-                            className="input"
-                            type="number"
-                            step="0.1"
-                            placeholder="min"
-                            value={filters.today_change_gt}
-                            onChange={(e) => setFilters({ ...filters, today_change_gt: e.target.value })}
-                            disabled={!filters.today_change_gt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>to</span>
-                        <input
-                            className="input"
-                            type="number"
-                            step="0.1"
-                            placeholder="max"
-                            value={filters.today_change_lt}
-                            onChange={(e) => setFilters({ ...filters, today_change_lt: e.target.value })}
-                            disabled={!filters.today_change_lt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>%</span>
-                    </label>
+                        <label className="filter-checkbox">
+                            <input
+                                type="checkbox"
+                                checked={filters.ema10_gt_ema20}
+                                onChange={(e) => setFilters({ ...filters, ema10_gt_ema20: e.target.checked })}
+                            />
+                            <span>EMA10 {'>'} EMA20</span>
+                        </label>
+                    </div>
 
-                    {/* L5 Open distance range */}
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.l5_open_dist_gt_enabled && filters.l5_open_dist_lt_enabled}
-                            onChange={(e) => setFilters({
-                                ...filters,
-                                l5_open_dist_gt_enabled: e.target.checked,
-                                l5_open_dist_lt_enabled: e.target.checked
-                            })}
-                        />
-                        <span>CP vs L5 Open %:</span>
-                        <input
-                            className="input"
-                            type="number"
-                            step="0.1"
-                            placeholder="min"
-                            value={filters.l5_open_dist_gt}
-                            onChange={(e) => setFilters({ ...filters, l5_open_dist_gt: e.target.value })}
-                            disabled={!filters.l5_open_dist_gt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>to</span>
-                        <input
-                            className="input"
-                            type="number"
-                            step="0.1"
-                            placeholder="max"
-                            value={filters.l5_open_dist_lt}
-                            onChange={(e) => setFilters({ ...filters, l5_open_dist_lt: e.target.value })}
-                            disabled={!filters.l5_open_dist_lt_enabled}
-                            style={{ width: '70px' }}
-                        />
-                        <span>%</span>
-                    </label>
+                    {/* Column 2: ATH & EMA */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.cp_gt_ath_pct_enabled}
+                                onChange={(e) => setFilters({ ...filters, cp_gt_ath_pct_enabled: e.target.checked })}
+                            />
+                            <span style={{ fontSize: '0.85rem' }}>CP {'>'}</span>
+                            <input
+                                className="input"
+                                type="number"
+                                value={filters.cp_gt_ath_pct}
+                                onChange={(e) => setFilters({ ...filters, cp_gt_ath_pct: e.target.value })}
+                                disabled={!filters.cp_gt_ath_pct_enabled}
+                                style={{ width: '50px', padding: '4px 8px' }}
+                            />
+                            <span style={{ fontSize: '0.85rem' }}>% ATH</span>
+                        </div>
 
-                    {/* Legacy filters */}
-                    <label className="filter-checkbox">
-                        <input
-                            type="checkbox"
-                            checked={filters.cp_gt_ema10}
-                            onChange={(e) => setFilters({ ...filters, cp_gt_ema10: e.target.checked })}
-                        />
-                        CP &gt; EMA10
-                    </label>
-                    <label className="filter-checkbox">
-                        <input
-                            type="checkbox"
-                            checked={filters.ema10_gt_ema20}
-                            onChange={(e) => setFilters({ ...filters, ema10_gt_ema20: e.target.checked })}
-                        />
-                        EMA10 &gt; EMA20
-                    </label>
-                    <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '6px', background: filters.w_ema4_gt_w_ema5 ? 'rgba(99, 179, 237, 0.12)' : 'transparent', border: filters.w_ema4_gt_w_ema5 ? '1px solid rgba(99,179,237,0.35)' : '1px solid transparent', transition: 'all 0.2s' }}>
-                        <input
-                            type="checkbox"
-                            checked={filters.w_ema4_gt_w_ema5}
-                            onChange={(e) => setFilters({ ...filters, w_ema4_gt_w_ema5: e.target.checked })}
-                        />
-                        <span style={{ fontWeight: filters.w_ema4_gt_w_ema5 ? 600 : 400 }}>W-EMA4 &gt; W-EMA5</span>
-                    </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.ema_comparison_enabled}
+                                onChange={(e) => setFilters({ ...filters, ema_comparison_enabled: e.target.checked })}
+                            />
+                            <select
+                                className="select"
+                                value={filters.ema_comparison}
+                                onChange={(e) => setFilters({ ...filters, ema_comparison: e.target.value })}
+                                disabled={!filters.ema_comparison_enabled}
+                                style={{ flex: 1, padding: '4px 8px' }}
+                            >
+                                <option value="">EMA Compare...</option>
+                                <option value="ema5_gt_ema10">EMA5 {'>'} EMA10</option>
+                                <option value="ema10_gt_ema20">EMA10 {'>'} EMA20</option>
+                                <option value="ema5_gt_ema20">EMA5 {'>'} EMA20</option>
+                                <option value="ema5_lt_ema10">EMA5 {'<'} EMA10</option>
+                                <option value="ema10_lt_ema20">EMA10 {'<'} EMA20</option>
+                                <option value="ema5_lt_ema20">EMA5 {'<'} EMA20</option>
+                            </select>
+                        </div>
 
-                    <button className="btn btn-primary" onClick={applyFilters} id="btn-apply-filters">
-                        Apply Filters
-                    </button>
-                    <button className="btn btn-secondary" onClick={resetFilters} id="btn-reset-filters">
-                        Reset
-                    </button>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={handleDownloadCSV}
-                        disabled={stocks.length === 0}
-                        style={{ marginLeft: 'auto' }}
-                    >
-                        ⬇️ Download CSV
-                    </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.l5_open_dist_gt_enabled && filters.l5_open_dist_lt_enabled}
+                                onChange={(e) => setFilters({
+                                    ...filters,
+                                    l5_open_dist_gt_enabled: e.target.checked,
+                                    l5_open_dist_lt_enabled: e.target.checked
+                                })}
+                            />
+                            <span style={{ fontSize: '0.8rem' }}>L5 Dist:</span>
+                            <input className="input" type="number" value={filters.l5_open_dist_gt} onChange={(e) => setFilters({ ...filters, l5_open_dist_gt: e.target.value })} disabled={!filters.l5_open_dist_gt_enabled} style={{ width: '45px', padding: '4px' }} />
+                            <span>to</span>
+                            <input className="input" type="number" value={filters.l5_open_dist_lt} onChange={(e) => setFilters({ ...filters, l5_open_dist_lt: e.target.value })} disabled={!filters.l5_open_dist_lt_enabled} style={{ width: '45px', padding: '4px' }} />
+                        </div>
+                    </div>
+
+                    {/* Column 3: Change Ranges */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.prev_change_lt_enabled && filters.prev_change_gt_enabled}
+                                onChange={(e) => setFilters({ ...filters, prev_change_lt_enabled: e.target.checked, prev_change_gt_enabled: e.target.checked })}
+                            />
+                            <span style={{ fontSize: '0.8rem' }}>Prev OC:</span>
+                            <input className="input" type="number" value={filters.prev_change_gt} onChange={(e) => setFilters({ ...filters, prev_change_gt: e.target.value })} disabled={!filters.prev_change_gt_enabled} style={{ width: '45px', padding: '4px' }} />
+                            <span>to</span>
+                            <input className="input" type="number" value={filters.prev_change_lt} onChange={(e) => setFilters({ ...filters, prev_change_lt: e.target.value })} disabled={!filters.prev_change_lt_enabled} style={{ width: '45px', padding: '4px' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.today_change_gt_enabled && filters.today_change_lt_enabled}
+                                onChange={(e) => setFilters({ ...filters, today_change_gt_enabled: e.target.checked, today_change_lt_enabled: e.target.checked })}
+                            />
+                            <span style={{ fontSize: '0.8rem' }}>Today OC:</span>
+                            <input className="input" type="number" value={filters.today_change_gt} onChange={(e) => setFilters({ ...filters, today_change_gt: e.target.value })} disabled={!filters.today_change_gt_enabled} style={{ width: '45px', padding: '4px' }} />
+                            <span>to</span>
+                            <input className="input" type="number" value={filters.today_change_lt} onChange={(e) => setFilters({ ...filters, today_change_lt: e.target.value })} disabled={!filters.today_change_lt_enabled} style={{ width: '45px', padding: '4px' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.w_otoc_gt_enabled && filters.w_otoc_lt_enabled}
+                                onChange={(e) => setFilters({ ...filters, w_otoc_gt_enabled: e.target.checked, w_otoc_lt_enabled: e.target.checked })}
+                            />
+                            <span style={{ fontSize: '0.8rem' }}>W OC:</span>
+                            <input className="input" type="number" value={filters.w_otoc_gt} onChange={(e) => setFilters({ ...filters, w_otoc_gt: e.target.value })} disabled={!filters.w_otoc_gt_enabled} style={{ width: '45px', padding: '4px' }} />
+                            <span>to</span>
+                            <input className="input" type="number" value={filters.w_otoc_lt} onChange={(e) => setFilters({ ...filters, w_otoc_lt: e.target.value })} disabled={!filters.w_otoc_lt_enabled} style={{ width: '45px', padding: '4px' }} />
+                        </div>
+                    </div>
+
+                    {/* Column 4: Actions */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center' }}>
+                        <button className="btn btn-primary" onClick={applyFilters} style={{ padding: '8px' }}>Apply Filters</button>
+                        <button className="btn btn-secondary" onClick={resetFilters} style={{ padding: '8px' }}>Reset</button>
+                        <button className="btn btn-secondary" onClick={handleDownloadCSV} style={{ padding: '8px' }}>⬇️ CSV</button>
+                    </div>
+
                 </div>
             </div>
 
@@ -522,12 +515,12 @@ export default function Screener({ addToast }) {
                     <table className="data-table" id="screener-table">
                         <thead>
                             <tr>
-                                <th>Group</th>
+                                <th className={`sortable ${filters.sortBy === 'group' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('group')}>Group</th>
                                 <th>Stock Name</th>
-                                <th>Symbol</th>
-                                <th className="text-right">ATH</th>
+                                <th className={`sortable ${filters.sortBy === 'trading_symbol' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('trading_symbol')}>Symbol</th>
+                                <th className={`text-right sortable ${filters.sortBy === 'ath' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('ath')}>ATH</th>
                                 <th className="text-right">Open</th>
-                                <th className="text-right">Price</th>
+                                <th className={`text-right sortable ${filters.sortBy === 'cp' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('cp')}>Price</th>
                                 <th className="text-right">L5 Open</th>
                                 <th className="text-right">L5 Dist %</th>
                                 <th className="text-right">Prev O→C %</th>
@@ -537,8 +530,11 @@ export default function Screener({ addToast }) {
                                 <th className="text-right">EMA 20</th>
                                 <th className="text-right">W-EMA 4</th>
                                 <th className="text-right">W-EMA 5</th>
-                                <th className="text-center">Last Updated</th>
-                                <th className="text-center">Action</th>
+                                <th className={`text-right sortable ${filters.sortBy === 'w_OtoC_pct_change' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('w_OtoC_pct_change')}>
+                                    W_O{'-'}{'>'}C %
+                                </th>
+                                <th className="text-center" style={{ width: '100px' }}>Last Updated</th>
+                                <th className="text-center" style={{ width: '220px' }}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -603,38 +599,45 @@ export default function Screener({ addToast }) {
                                         <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
                                             {formatCurrency(stock.w_ema5)}
                                         </td>
+                                        <td className={`text-right ${parseFloat(stock.w_OtoC_pct_change) > 0 ? 'cell-positive' : parseFloat(stock.w_OtoC_pct_change) < 0 ? 'cell-negative' : 'cell-muted'}`}>
+                                            {formatPercent(stock.w_OtoC_pct_change)}
+                                        </td>
                                         <td className="text-center cell-muted" style={{ fontSize: '0.85rem' }}>
                                             {formatRelativeTime(stock.last_updated)}
                                         </td>
-                                        <td className="text-center" style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                            <button
-                                                className="btn btn-icon"
-                                                onClick={() => handleRefreshOne(stock.trading_symbol || stock.symbol)}
-                                                title="Refresh Price"
-                                                disabled={refreshingSymbol === (stock.trading_symbol || stock.symbol)}
-                                            >
-                                                {refreshingSymbol === (stock.trading_symbol || stock.symbol) ? '↻' : '↻'}
-                                            </button>
-                                            <button
-                                                className="btn btn-primary"
-                                                style={{ fontSize: '0.7rem', padding: '6px 10px' }}
-                                                onClick={() => {
-                                                    setAddPosStock(stock);
-                                                    setAddPosForm({ quantity: 1, price: stock.cp, stoploss: stock.open || 0 });
-                                                }}
-                                            >
-                                                ADD POS
-                                            </button>
-                                            <button
-                                                className="btn btn-buy"
-                                                onClick={() => {
-                                                    setBuyStock(stock);
-                                                    setBuyForm({ quantity: 1, order_type: 'MARKET', price: '' });
-                                                }}
-                                                id={`btn-buy-${stock.trading_symbol || stock.symbol}`}
-                                            >
-                                                BUY
-                                            </button>
+                                        <td className="text-center">
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => handleRefreshOne(stock.trading_symbol || stock.symbol)}
+                                                    title="Refresh Price"
+                                                    disabled={refreshingSymbol === (stock.trading_symbol || stock.symbol)}
+                                                    style={{ padding: '4px', minWidth: 'unset' }}
+                                                >
+                                                    {refreshingSymbol === (stock.trading_symbol || stock.symbol) ? '↻' : '↻'}
+                                                </button>
+                                                <button
+                                                    className="btn btn-primary"
+                                                    style={{ fontSize: '0.65rem', padding: '5px 8px' }}
+                                                    onClick={() => {
+                                                        setAddPosStock(stock);
+                                                        setAddPosForm({ quantity: 1, price: stock.cp, stoploss: stock.w_open || stock.open || 0 });
+                                                    }}
+                                                >
+                                                    ADD POS
+                                                </button>
+                                                <button
+                                                    className="btn btn-buy"
+                                                    onClick={() => {
+                                                        setBuyStock(stock);
+                                                        setBuyForm({ quantity: 1, order_type: 'MARKET', price: '' });
+                                                    }}
+                                                    id={`btn-buy-${stock.trading_symbol || stock.symbol}`}
+                                                    style={{ fontSize: '0.65rem', padding: '5px 8px' }}
+                                                >
+                                                    BUY
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
