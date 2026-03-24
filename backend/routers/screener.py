@@ -35,6 +35,8 @@ async def get_filtered_stocks(
     w_ema4_gt_w_ema5: Optional[bool] = None,  # Weekly EMA4 > Weekly EMA5
     w_otoc_gt: Optional[float] = None,  # Weekly O->C > X%
     w_otoc_lt: Optional[float] = None,  # Weekly O->C < X%
+    weekly_l5_dist_gt: Optional[float] = None, 
+    weekly_l5_dist_lt: Optional[float] = None,
 ):
     """
     Get filtered stocks based on technical criteria.
@@ -157,6 +159,13 @@ async def get_filtered_stocks(
         else:
             stock["l5_open_dist_pct"] = 0.0
             
+        # Weekly L5 distance
+        w_l5_open = _safe_float(stock.get("w_l5_open"))
+        if w_l5_open > 0:
+            stock["weekly_l5_distance"] = round(((cp - w_l5_open) / cp) * 100, 2)
+        else:
+            stock["weekly_l5_distance"] = 0.0
+            
     # L5 Open distance range filtering
     l5_lt = l5_open_dist_lt
     l5_gt = l5_open_dist_gt
@@ -183,6 +192,19 @@ async def get_filtered_stocks(
         filtered = [s for s in filtered if _safe_float(s.get("w_OtoC_pct_change", 0)) <= wo_lt]
     elif wo_gt is not None:
         filtered = [s for s in filtered if _safe_float(s.get("w_OtoC_pct_change", 0)) >= wo_gt]
+
+    # Weekly L5 Dist range filtering
+    wl_lt = weekly_l5_dist_lt
+    wl_gt = weekly_l5_dist_gt
+    if wl_lt is not None or wl_gt is not None:
+        filtered = [s for s in filtered if _safe_float(s.get("w_l5_open")) > 0]
+        if wl_lt is not None and wl_gt is not None:
+            low, high = (wl_gt, wl_lt) if wl_gt < wl_lt else (wl_lt, wl_gt)
+            filtered = [s for s in filtered if low <= _safe_float(s.get("weekly_l5_distance", 0)) <= high]
+        elif wl_lt is not None:
+            filtered = [s for s in filtered if _safe_float(s.get("weekly_l5_distance", 0)) <= wl_lt]
+        elif wl_gt is not None:
+            filtered = [s for s in filtered if _safe_float(s.get("weekly_l5_distance", 0)) >= wl_gt]
 
     return {
         "status": "success",

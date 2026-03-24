@@ -15,7 +15,7 @@ import math
 from backend.services.csv_store import CSVStore
 from backend.services.upstox import get_historical_candles, get_current_price, get_monthly_ath
 from backend.services.ema import calculate_ema
-from backend.config import MASTER_CSV, NSE_EQ_JSON, L5_OPEN_MIN_PCT, L5_OPEN_MAX_PCT
+from backend.config import MASTER_CSV, NSE_EQ_JSON, L5_OPEN_MIN_PCT, L5_OPEN_MAX_PCT, WEEKLY_L5_OPEN_MIN_PCT, WEEKLY_L5_OPEN_MAX_PCT
 
 router = APIRouter(prefix="/api/master", tags=["Master Watchlist"])
 
@@ -87,6 +87,7 @@ class StockCreate(BaseModel):
     w_ema4: Optional[float] = 0.0
     w_ema5: Optional[float] = 0.0
     w_open: Optional[float] = 0.0
+    w_l5_open: Optional[float] = 0.0
     w_OtoC_pct_change: Optional[float] = 0.0
 
 
@@ -103,6 +104,7 @@ class StockUpdate(BaseModel):
     w_ema4: Optional[float] = None
     w_ema5: Optional[float] = None
     w_open: Optional[float] = None
+    w_l5_open: Optional[float] = None
     w_OtoC_pct_change: Optional[float] = None
 
 
@@ -162,7 +164,9 @@ async def add_stock(stock: StockCreate):
         "w_ema4": 0.0,
         "w_ema5": 0.0,
         "w_open": 0.0,
+        "w_l5_open": 0.0,
         "w_OtoC_pct_change": 0.0,
+        "weekly_l5_distance": 0.0,
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
@@ -560,6 +564,37 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
                 # Formula: ((close - open) / close) * 100
                 w_otoc_pct = round(((cp - current_week_open) / cp) * 100, 2)
 
+        # Find latest weekly bar matching min/max range for w_l5_open
+        # ----------------------------------------------------------------------
+        w_l5_open = 0.0
+        try:
+            # User request: "w_l5_open should see only last 5 candles"
+            # And "does w_l5_open considers current week also?" -> implying yes.
+            # We look at the last 5 weekly bars.
+            # candles[-1] is current week.
+            scan_candles = candles[-5:] if len(candles) >= 5 else candles
+            
+            for i, c in enumerate(reversed(scan_candles)):
+                o = float(c.get("open") or 0)
+                cl = float(c.get("close") or 0)
+                
+                # If it's the current week (index 0 in reversed), we use live CP
+                target_close = cp if i == 0 else cl
+                
+                if o > 0 and target_close > 0:
+                    # Formula: ((close - open) / close) * 100
+                    pct = ((target_close - o) / target_close) * 100
+                    if WEEKLY_L5_OPEN_MIN_PCT <= pct <= WEEKLY_L5_OPEN_MAX_PCT:
+                        w_l5_open = o
+                        break
+        except Exception as e:
+            print(f"[Master Weekly] error matching w_l5_open: {e}")
+
+        # Calculate Weekly L5 Distance formula: ((cp - w_l5_open) / cp) * 100
+        weekly_l5_distance = 0.0
+        if w_l5_open > 0 and cp > 0:
+            weekly_l5_distance = round(((cp - w_l5_open) / cp) * 100, 2)
+
         return sanitize_value({
             **stock,
             "cp": cp,
@@ -567,7 +602,9 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
             "w_ema4": round(w_ema4, 2),
             "w_ema5": round(w_ema5, 2),
             "w_open": round(current_week_open, 2),
+            "w_l5_open": round(w_l5_open, 2),
             "w_OtoC_pct_change": w_otoc_pct,
+            "weekly_l5_distance": weekly_l5_distance,
             "last_updated": datetime.now().isoformat(),
         })
     except Exception as e:

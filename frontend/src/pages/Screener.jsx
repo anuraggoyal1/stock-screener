@@ -71,10 +71,12 @@ export default function Screener({ addToast }) {
         l5_open_dist_lt_enabled: false,
         l5_open_dist_lt: '5',
         w_ema4_gt_w_ema5: true,
-        w_otoc_gt: '1',
-        w_otoc_gt_enabled: true,
         w_otoc_lt: '5',
         w_otoc_lt_enabled: true,
+        weekly_l5_dist_gt: '1',
+        weekly_l5_dist_gt_enabled: true,
+        weekly_l5_dist_lt: '5',
+        weekly_l5_dist_lt_enabled: true,
         sortBy: 'group',
         sortDir: 'asc'
     });
@@ -153,6 +155,12 @@ export default function Screener({ addToast }) {
             if (filters.w_otoc_lt_enabled && filters.w_otoc_lt !== '') {
                 params.w_otoc_lt = parseFloat(filters.w_otoc_lt);
             }
+            if (filters.weekly_l5_dist_gt_enabled && filters.weekly_l5_dist_gt !== '') {
+                params.weekly_l5_dist_gt = parseFloat(filters.weekly_l5_dist_gt);
+            }
+            if (filters.weekly_l5_dist_lt_enabled && filters.weekly_l5_dist_lt !== '') {
+                params.weekly_l5_dist_lt = parseFloat(filters.weekly_l5_dist_lt);
+            }
 
             const res = await screenerAPI.getFiltered(params);
             let data = res.data.data || [];
@@ -223,10 +231,12 @@ export default function Screener({ addToast }) {
             l5_open_dist_lt_enabled: false,
             l5_open_dist_lt: '5',
             w_ema4_gt_w_ema5: true,
-            w_otoc_gt: '1',
-            w_otoc_gt_enabled: true,
             w_otoc_lt: '5',
             w_otoc_lt_enabled: true,
+            weekly_l5_dist_gt: '1',
+            weekly_l5_dist_gt_enabled: true,
+            weekly_l5_dist_lt: '5',
+            weekly_l5_dist_lt_enabled: true,
             sortBy: 'group',
             sortDir: 'asc'
         });
@@ -485,6 +495,18 @@ export default function Screener({ addToast }) {
                             <span>to</span>
                             <input className="input" type="number" value={filters.w_otoc_lt} onChange={(e) => setFilters({ ...filters, w_otoc_lt: e.target.value })} disabled={!filters.w_otoc_lt_enabled} style={{ width: '45px', padding: '4px' }} />
                         </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={filters.weekly_l5_dist_gt_enabled && filters.weekly_l5_dist_lt_enabled}
+                                onChange={(e) => setFilters({ ...filters, weekly_l5_dist_gt_enabled: e.target.checked, weekly_l5_dist_lt_enabled: e.target.checked })}
+                            />
+                            <span style={{ fontSize: '0.8rem' }}>W_L5 Dist:</span>
+                            <input className="input" type="number" value={filters.weekly_l5_dist_gt} onChange={(e) => setFilters({ ...filters, weekly_l5_dist_gt: e.target.value })} disabled={!filters.weekly_l5_dist_gt_enabled} style={{ width: '45px', padding: '4px' }} />
+                            <span>to</span>
+                            <input className="input" type="number" value={filters.weekly_l5_dist_lt} onChange={(e) => setFilters({ ...filters, weekly_l5_dist_lt: e.target.value })} disabled={!filters.weekly_l5_dist_lt_enabled} style={{ width: '45px', padding: '4px' }} />
+                        </div>
                     </div>
 
                     {/* Column 4: Actions */}
@@ -530,6 +552,8 @@ export default function Screener({ addToast }) {
                                 <th className="text-right">EMA 20</th>
                                 <th className="text-right">W-EMA 4</th>
                                 <th className="text-right">W-EMA 5</th>
+                                <th className="text-right">W_L5-Open</th>
+                                <th className="text-right">W_L5-Dist %</th>
                                 <th className={`text-right sortable ${filters.sortBy === 'w_OtoC_pct_change' ? (filters.sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : ''}`} onClick={() => toggleSort('w_OtoC_pct_change')}>
                                     W_O{'-'}{'>'}C %
                                 </th>
@@ -598,6 +622,10 @@ export default function Screener({ addToast }) {
                                         </td>
                                         <td className={`text-right ${parseFloat(stock.w_ema4) > parseFloat(stock.w_ema5) ? 'cell-positive' : 'cell-muted'}`}>
                                             {formatCurrency(stock.w_ema5)}
+                                        </td>
+                                        <td className="text-right cell-muted">{formatCurrency(stock.w_l5_open)}</td>
+                                        <td className={`text-right ${parseFloat(stock.weekly_l5_distance) > 0 ? 'cell-positive' : parseFloat(stock.weekly_l5_distance) < 0 ? 'cell-negative' : 'cell-muted'}`}>
+                                            {formatPercent(stock.weekly_l5_distance)}
                                         </td>
                                         <td className={`text-right ${parseFloat(stock.w_OtoC_pct_change) > 0 ? 'cell-positive' : parseFloat(stock.w_OtoC_pct_change) < 0 ? 'cell-negative' : 'cell-muted'}`}>
                                             {formatPercent(stock.w_OtoC_pct_change)}

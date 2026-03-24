@@ -49,6 +49,8 @@ DEFAULT_EXCHANGE = config["defaults"]["exchange"]
 # Screener
 L5_OPEN_MIN_PCT = config.get("screener", {}).get("l5_open_min_pct", 1.0)
 L5_OPEN_MAX_PCT = config.get("screener", {}).get("l5_open_max_pct", 5.0)
+WEEKLY_L5_OPEN_MIN_PCT = config.get("screener", {}).get("weekly_l5_open_min_pct", 1.0)
+WEEKLY_L5_OPEN_MAX_PCT = config.get("screener", {}).get("weekly_l5_open_max_pct", 5.0)
 
 # CSV file paths
 MASTER_CSV = DATA_DIR / "master.csv"
