@@ -361,6 +361,8 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             "last_updated": datetime.now().isoformat(),
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[Master Refresh] Error for {trading_symbol}: {repr(e)}")
         stock["refresh_error"] = str(e)
@@ -401,6 +403,8 @@ async def refresh_all():
             quotes = await get_multiple_quotes(chunk)
             all_quotes.update(quotes)
             await asyncio.sleep(0.2) # Small delay between quote batches
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[Master Refresh] Quote batch error: {e}")
 
@@ -618,6 +622,8 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
             "weekly_l5_distance": weekly_l5_distance,
             "last_updated": datetime.now().isoformat(),
         })
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[Master Weekly Refresh] Error for {trading_symbol}: {repr(e)}")
         stock["refresh_error"] = str(e)
@@ -652,6 +658,8 @@ async def refresh_all_weekly():
             quotes = await get_multiple_quotes(chunk)
             all_quotes.update(quotes)
             await asyncio.sleep(0.2)
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[Master Weekly] Quote batch error: {e}")
 

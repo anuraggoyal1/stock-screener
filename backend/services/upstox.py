@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from typing import Optional
 import asyncio
+from fastapi import HTTPException
 
 from backend.config import UPSTOX_API_KEY, UPSTOX_API_SECRET, UPSTOX_REDIRECT_URI, UPSTOX_ACCESS_TOKEN
 
@@ -155,6 +156,9 @@ async def get_historical_candles(
                 headers=_get_headers(),
             )
         
+        if response.status_code == 401:
+            raise HTTPException(status_code=400, detail="Invalid Upstox Token. Please reconnect your Upstox account.")
+            
         if response.status_code != 200:
             print(f"[Upstox] Error {response.status_code} for {instrument_key}: {response.text}")
             return []
@@ -267,6 +271,9 @@ async def get_current_price(identifier: str) -> dict:
                 params={"instrument_key": instrument_key, "interval": "1d"},
             )
             
+        if response.status_code == 401:
+            raise HTTPException(status_code=400, detail="Invalid Upstox Token. Please reconnect your Upstox account.")
+
         if response.status_code != 200:
             print(f"[Upstox] Error {response.status_code} for {instrument_key}: {response.text}")
             return {}
@@ -352,6 +359,9 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
                 headers=_get_headers(),
                 params={"instrument_key": instrument_keys, "interval": "1d"},
             )
+
+        if response.status_code == 401:
+            raise HTTPException(status_code=400, detail="Invalid Upstox Token. Please reconnect your Upstox account.")
 
         if response.status_code != 200:
             print(f"[Upstox] get_multiple_quotes Error {response.status_code}: {response.text}")
