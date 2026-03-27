@@ -19,6 +19,15 @@ class CSVStore:
             with open(self.filepath, "w", newline="") as f:
                 pass
 
+    def _sync_to_gcs(self):
+        """Upload this CSV to GCS if we are in Cloud Run environment."""
+        if os.environ.get("ENABLE_GCP_SECRETS") == "true":
+            try:
+                from backend.services.storage import upload_to_gcs
+                upload_to_gcs(self.filepath.name)
+            except Exception as e:
+                print(f"[CSVStore] Sync to GCS failed: {e}")
+
     def read_all(self) -> list[dict]:
         """Read all rows from the CSV file."""
         try:
@@ -46,9 +55,11 @@ class CSVStore:
             df = self.read_df()
             if not df.empty:
                 df.head(0).to_csv(self.filepath, index=False)
+                self._sync_to_gcs()
             return
         df = pd.DataFrame(records)
         df.to_csv(self.filepath, index=False)
+        self._sync_to_gcs()
 
     def add_row(self, row: dict):
         """Append a single row to the CSV file."""
@@ -74,6 +85,7 @@ class CSVStore:
                 df[col] = df[col].astype(float)
             df.loc[mask, col] = val
         df.to_csv(self.filepath, index=False)
+        self._sync_to_gcs()
         return True
 
     def delete_row(self, key_col: str, key_val: str) -> bool:
@@ -86,6 +98,7 @@ class CSVStore:
             return False
         df = df[~mask]
         df.to_csv(self.filepath, index=False)
+        self._sync_to_gcs()
         return True
 
     def delete_one(self, criteria: dict) -> bool:
@@ -108,6 +121,7 @@ class CSVStore:
         idx_to_drop = df[mask].index[0]
         df = df.drop(idx_to_drop)
         df.to_csv(self.filepath, index=False)
+        self._sync_to_gcs()
         return True
 
     def update_one(self, criteria: dict, updates: dict) -> bool:
@@ -141,6 +155,7 @@ class CSVStore:
             df.at[idx_to_update, col] = val
 
         df.to_csv(self.filepath, index=False)
+        self._sync_to_gcs()
         return True
 
     def find_row(self, key_col: str, key_val: str) -> Optional[dict]:

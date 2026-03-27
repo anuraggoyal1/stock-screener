@@ -170,9 +170,6 @@ async def add_stock(stock: StockCreate):
         "last_updated": datetime.now().isoformat(),
     }
     store.add_row(row)
-    # NEW: Sync to GCS
-    from backend.services.storage import upload_to_gcs
-    upload_to_gcs("master.csv")
     return {"status": "success", "data": row, "message": f"Stock {stock.trading_symbol} added"}
 
 
@@ -203,9 +200,6 @@ async def delete_stock(symbol: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     
-    # NEW: Sync to GCS
-    from backend.services.storage import upload_to_gcs
-    upload_to_gcs("master.csv")
     return {"status": "success", "message": f"Stock {symbol} removed"}
 
 
@@ -431,9 +425,6 @@ async def refresh_all():
     # 4. Save all at once
     store.write_all(updated_stocks)
     
-    # NEW: Sync to GCS
-    from backend.services.storage import upload_to_gcs
-    upload_to_gcs("master.csv")
     
     errors = [s.get("trading_symbol") or s.get("symbol") for s in updated_stocks if "refresh_error" in s]
     
