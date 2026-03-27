@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Toast, { useToast } from './components/Toast';
@@ -7,9 +8,20 @@ import Positions from './pages/Positions';
 import TradeLog from './pages/TradeLog';
 import UpstoxToken from './pages/UpstoxToken';
 import Backtest from './pages/Backtest';
+import Login from './pages/Login';
 
 function App() {
   const { toasts, addToast, removeToast } = useToast();
+  const [isAuth, setIsAuth] = useState(!!localStorage.getItem('X-API-Key'));
+
+  if (!isAuth) {
+    return (
+      <div className="app-layout">
+        <Login setAuth={setIsAuth} />
+        <Toast toasts={toasts} removeToast={removeToast} />
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

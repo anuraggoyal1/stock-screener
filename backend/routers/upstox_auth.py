@@ -14,6 +14,7 @@ import yaml
 from backend.services.upstox import get_auth_url, exchange_code_for_token
 import backend.config as app_config
 import backend.services.upstox as upstox_svc
+import os
 
 
 router = APIRouter(prefix="/api/upstox", tags=["Upstox"])
@@ -59,37 +60,47 @@ class TokenPayload(BaseModel):
 @router.post("/save-token")
 async def upstox_save_token(payload: TokenPayload):
     """
-    Persist the Upstox access token to config.yaml and update runtime config.
-
-    This lets new API calls immediately use the token without restarting.
+    Persist the Upstox access token to config.yaml (locally) or
+    Secret Manager (GCP) and update runtime config.
     """
     token = payload.access_token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="access_token is required")
 
-    # Load existing config.yaml
-    try:
-        with open(app_config.CONFIG_PATH, "r") as f:
-            current = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail=f"Config file not found at {app_config.CONFIG_PATH}")
-
-    # Update token in config structure
-    upstox_cfg = current.get("upstox") or {}
+    # Clone current memory config
+    current_config = dict(app_config.config)
+    upstox_cfg = dict(current_config.get("upstox") or {})
     upstox_cfg["access_token"] = token
-    current["upstox"] = upstox_cfg
+    current_config["upstox"] = upstox_cfg
 
-    # Write back to config.yaml
-    with open(app_config.CONFIG_PATH, "w") as f:
-        yaml.safe_dump(current, f, sort_keys=False)
+    # Decide where to persist: Secret Manager or Local YAML
+    is_gcp = os.environ.get("ENABLE_GCP_SECRETS") == "true"
+    
+    if is_gcp:
+        try:
+            from backend.services.secrets import update_config_secret
+            success = update_config_secret(current_config)
+            if not success:
+                raise Exception("Failed to update Google Secret")
+            msg = "Access token updated in Google Secret Manager."
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"GCP Sync Failure: {e}")
+    else:
+        # Local fallback
+        try:
+            with open(app_config.CONFIG_PATH, "w") as f:
+                yaml.safe_dump(current_config, f, sort_keys=False)
+            msg = "Access token saved to local config.yaml."
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Local Write Failure: {e}")
 
-    # Update in-memory config used by the app
-    app_config.config = current
+    # Update runtime memory
+    app_config.config = current_config
     app_config.UPSTOX_ACCESS_TOKEN = token
     upstox_svc.UPSTOX_ACCESS_TOKEN = token
 
     return {
         "status": "success",
-        "message": "Upstox access token saved to config.yaml and applied to runtime.",
+        "message": f"{msg} Runtime updated.",
     }
 

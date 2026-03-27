@@ -9,9 +9,30 @@ DATA_DIR = BASE_DIR / "data"
 
 
 def load_config():
-    """Load configuration from config.yaml."""
+    """
+    Load configuration.
+    Priority: 1. Google Secret Manager (if ENABLE_GCP_SECRETS is on), 2. Local config.yaml.
+    """
+    if os.environ.get("ENABLE_GCP_SECRETS") == "true":
+        try:
+            from backend.services.secrets import get_config_from_secrets
+            gcp_config = get_config_from_secrets()
+            if gcp_config:
+                print("[Config] Using Google Secret Manager config.")
+                return gcp_config
+        except Exception as e:
+            print(f"[Config] Failed to load GCP secrets: {e}")
+
     if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}")
+        # Fallback to defaults or empty if file missing (e.g. in Docker)
+        return {
+            "upstox": {"api_key": "", "api_secret": "", "redirect_uri": "", "access_token": ""},
+            "zerodha": {"api_key": "", "api_secret": "", "access_token": ""},
+            "scheduler": {"update_interval_minutes": 5, "market_open": "09:15", "market_close": "15:30"},
+            "app": {"host": "0.0.0.0", "port": 8000, "cors_origins": ["*"]},
+            "defaults": {"order_type": "MARKET", "default_quantity": 1, "exchange": "NSE"}
+        }
+    
     with open(CONFIG_PATH, "r") as f:
         return yaml.safe_load(f)
 
@@ -40,6 +61,15 @@ AUTO_REFRESH = config["scheduler"].get("auto_refresh", False)  # Periodic auto-r
 APP_HOST = config["app"]["host"]
 APP_PORT = config["app"]["port"]
 CORS_ORIGINS = config["app"]["cors_origins"]
+
+# Robust AUTH_KEY search
+AUTH_KEY = (
+    config.get("AUTH_KEY") or 
+    config.get("auth_key") or 
+    config.get("app", {}).get("auth_key") or 
+    config.get("app", {}).get("AUTH_KEY") or 
+    os.environ.get("AUTH_KEY")
+)
 
 # Defaults
 DEFAULT_ORDER_TYPE = config["defaults"]["order_type"]

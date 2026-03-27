@@ -1,0 +1,26 @@
+steps:
+  # 1. Build and push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-lib/stock-screener', '.']
+
+  # 2. Push to Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-lib/stock-screener']
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'stock-screener'
+      - '--image'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-lib/stock-screener'
+      - '--region'
+      - 'us-central1'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'ENABLE_GCP_SECRETS=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-lib/stock-screener'

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:8000/api');
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -8,6 +8,29 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Automatically add API key to headers if present in localStorage
+api.interceptors.request.use((config) => {
+  const apiKey = localStorage.getItem('X-API-Key');
+  if (apiKey) {
+    config.headers['X-API-Key'] = apiKey;
+  }
+  return config;
+});
+
+// Automatically handle unauthorized errors (401) by clearing the invalid key and reloading
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      if (localStorage.getItem('X-API-Key')) {
+        localStorage.removeItem('X-API-Key');
+        window.location.reload();
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ---- Master List ----
 export const masterAPI = {
