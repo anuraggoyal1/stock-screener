@@ -1,0 +1,21 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8081:8080"  # Computer 8081 -> Container 8080
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8081/api  # <-- Bakes the URL into the build step
+    ports:
+      - "3000:8080"  # Maps Computer 3000 -> Frontend Container 8080
+    depends_on:
+      - backend

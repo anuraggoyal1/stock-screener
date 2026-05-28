@@ -1,0 +1,14 @@
+restart docker compose -
+    docker-compose down && docker-compose up -d
+
+build frontend - 
+    docker-compose build frontend --no-cache && docker-compose up
+
+rebuild - 
+    docker-compose build --no-cache && docker-compose up
+
+
+
+
+http://localhost:3000/   front end
+http://localhost:8081/docs
