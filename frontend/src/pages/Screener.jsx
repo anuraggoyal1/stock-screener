@@ -46,6 +46,7 @@ export default function Screener({ addToast }) {
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
+    const [search, setSearch] = useState('');
 
     // Filter state with defaults — only CP > 80% ATH and W-EMA4 > W-EMA5 on by default
     const [filters, setFilters] = useState({
@@ -112,67 +113,68 @@ export default function Screener({ addToast }) {
         } catch (err) { }
     };
 
-    const fetchFiltered = async () => {
+    const fetchFiltered = async (overrideFilters = null) => {
         try {
             setLoading(true);
+            const currentFilters = overrideFilters || filters;
             const params = {};
-            if (filters.ema10_gt_ema20) params.ema10_gt_ema20 = true;
-            if (filters.near_ath_pct) params.near_ath_pct = parseFloat(filters.near_ath_pct);
-            if (filters.group) params.group = filters.group;
-            if (filters.min_cp) params.min_cp = parseFloat(filters.min_cp);
-            if (filters.max_cp) params.max_cp = parseFloat(filters.max_cp);
+            if (currentFilters.ema10_gt_ema20) params.ema10_gt_ema20 = true;
+            if (currentFilters.near_ath_pct) params.near_ath_pct = parseFloat(currentFilters.near_ath_pct);
+            if (currentFilters.group) params.group = currentFilters.group;
+            if (currentFilters.min_cp) params.min_cp = parseFloat(currentFilters.min_cp);
+            if (currentFilters.max_cp) params.max_cp = parseFloat(currentFilters.max_cp);
             // New filters
-            if (filters.cp_gt_ath_pct_enabled && filters.cp_gt_ath_pct) {
-                params.cp_gt_ath_pct = parseFloat(filters.cp_gt_ath_pct);
+            if (currentFilters.cp_gt_ath_pct_enabled && currentFilters.cp_gt_ath_pct) {
+                params.cp_gt_ath_pct = parseFloat(currentFilters.cp_gt_ath_pct);
             }
-            if (filters.ema_comparison_enabled && filters.ema_comparison) {
-                params.ema_comparison = filters.ema_comparison;
+            if (currentFilters.ema_comparison_enabled && currentFilters.ema_comparison) {
+                params.ema_comparison = currentFilters.ema_comparison;
             }
-            if (filters.prev_change_lt_enabled && filters.prev_change_lt !== '') {
-                params.prev_change_lt = parseFloat(filters.prev_change_lt);
+            if (currentFilters.prev_change_lt_enabled && currentFilters.prev_change_lt !== '') {
+                params.prev_change_lt = parseFloat(currentFilters.prev_change_lt);
             }
-            if (filters.prev_change_gt_enabled && filters.prev_change_gt !== '') {
-                params.prev_change_gt = parseFloat(filters.prev_change_gt);
+            if (currentFilters.prev_change_gt_enabled && currentFilters.prev_change_gt !== '') {
+                params.prev_change_gt = parseFloat(currentFilters.prev_change_gt);
             }
-            if (filters.today_change_gt_enabled && filters.today_change_gt !== '') {
-                params.today_change_gt = parseFloat(filters.today_change_gt);
+            if (currentFilters.today_change_gt_enabled && currentFilters.today_change_gt !== '') {
+                params.today_change_gt = parseFloat(currentFilters.today_change_gt);
             }
-            if (filters.today_change_lt_enabled && filters.today_change_lt !== '') {
-                params.today_change_lt = parseFloat(filters.today_change_lt);
+            if (currentFilters.today_change_lt_enabled && currentFilters.today_change_lt !== '') {
+                params.today_change_lt = parseFloat(currentFilters.today_change_lt);
             }
-            if (filters.l5_open_dist_gt_enabled && filters.l5_open_dist_gt !== '') {
-                params.l5_open_dist_gt = parseFloat(filters.l5_open_dist_gt);
+            if (currentFilters.l5_open_dist_gt_enabled && currentFilters.l5_open_dist_gt !== '') {
+                params.l5_open_dist_gt = parseFloat(currentFilters.l5_open_dist_gt);
             }
-            if (filters.l5_open_dist_lt_enabled && filters.l5_open_dist_lt !== '') {
-                params.l5_open_dist_lt = parseFloat(filters.l5_open_dist_lt);
+            if (currentFilters.l5_open_dist_lt_enabled && currentFilters.l5_open_dist_lt !== '') {
+                params.l5_open_dist_lt = parseFloat(currentFilters.l5_open_dist_lt);
             }
-            if (filters.w_ema4_gt_w_ema5) {
+            if (currentFilters.w_ema4_gt_w_ema5) {
                 params.w_ema4_gt_w_ema5 = true;
             }
-            if (filters.w_otoc_gt_enabled && filters.w_otoc_gt !== '') {
-                params.w_otoc_gt = parseFloat(filters.w_otoc_gt);
+            if (currentFilters.w_otoc_gt_enabled && currentFilters.w_otoc_gt !== '') {
+                params.w_otoc_gt = parseFloat(currentFilters.w_otoc_gt);
             }
-            if (filters.w_otoc_lt_enabled && filters.w_otoc_lt !== '') {
-                params.w_otoc_lt = parseFloat(filters.w_otoc_lt);
+            if (currentFilters.w_otoc_lt_enabled && currentFilters.w_otoc_lt !== '') {
+                params.w_otoc_lt = parseFloat(currentFilters.w_otoc_lt);
             }
-            if (filters.weekly_l5_dist_gt_enabled && filters.weekly_l5_dist_gt !== '') {
-                params.weekly_l5_dist_gt = parseFloat(filters.weekly_l5_dist_gt);
+            if (currentFilters.weekly_l5_dist_gt_enabled && currentFilters.weekly_l5_dist_gt !== '') {
+                params.weekly_l5_dist_gt = parseFloat(currentFilters.weekly_l5_dist_gt);
             }
-            if (filters.weekly_l5_dist_lt_enabled && filters.weekly_l5_dist_lt !== '') {
-                params.weekly_l5_dist_lt = parseFloat(filters.weekly_l5_dist_lt);
+            if (currentFilters.weekly_l5_dist_lt_enabled && currentFilters.weekly_l5_dist_lt !== '') {
+                params.weekly_l5_dist_lt = parseFloat(currentFilters.weekly_l5_dist_lt);
             }
 
             const res = await screenerAPI.getFiltered(params);
             let data = res.data.data || [];
 
             // Client-side sorting
-            if (filters.sortBy) {
+            if (currentFilters.sortBy) {
                 data.sort((a, b) => {
-                    let valA = a[filters.sortBy];
-                    let valB = b[filters.sortBy];
+                    let valA = a[currentFilters.sortBy];
+                    let valB = b[currentFilters.sortBy];
 
                     // Handle special case for W_O->C% which is w_OtoC_pct_change
-                    if (filters.sortBy === 'w_OtoC_pct_change') {
+                    if (currentFilters.sortBy === 'w_OtoC_pct_change') {
                         valA = parseFloat(valA) || 0;
                         valB = parseFloat(valB) || 0;
                     } else if (typeof valA === 'string') {
@@ -183,8 +185,8 @@ export default function Screener({ addToast }) {
                         valB = parseFloat(valB) || 0;
                     }
 
-                    if (valA < valB) return filters.sortDir === 'asc' ? -1 : 1;
-                    if (valA > valB) return filters.sortDir === 'asc' ? 1 : -1;
+                    if (valA < valB) return currentFilters.sortDir === 'asc' ? -1 : 1;
+                    if (valA > valB) return currentFilters.sortDir === 'asc' ? 1 : -1;
                     return 0;
                 });
             }
@@ -208,7 +210,7 @@ export default function Screener({ addToast }) {
     };
 
     const resetFilters = () => {
-        setFilters({
+        const defaultFilters = {
             ema10_gt_ema20: false,
             near_ath_pct: '',
             group: '',
@@ -239,8 +241,18 @@ export default function Screener({ addToast }) {
             weekly_l5_dist_lt_enabled: true,
             sortBy: 'group',
             sortDir: 'asc'
-        });
-        setTimeout(fetchFiltered, 0);
+        };
+        setFilters(defaultFilters);
+        fetchFiltered(defaultFilters);
+    };
+
+    const handleGroupClick = (groupName) => {
+        const targetGroup = groupName === 'Ungrouped' ? '' : groupName;
+        // Only toggle off if already selected, otherwise turn on
+        const updatedGroup = filters.group === targetGroup ? '' : targetGroup;
+        const nextFilters = { ...filters, group: updatedGroup };
+        setFilters(nextFilters);
+        fetchFiltered(nextFilters);
     };
 
     const toggleSort = (field) => {
@@ -280,26 +292,21 @@ export default function Screener({ addToast }) {
         }
     };
 
-    const handleDownloadCSV = () => {
+    const handleCopySymbols = () => {
         if (!stocks || stocks.length === 0) {
-            addToast('No stocks to download', 'error');
+            addToast('No stocks to copy', 'error');
             return;
         }
 
         // All symbols comma-separated on a single row, e.g.: NSE:RELIANCE,NSE:TCS,NSE:INFY
         const csvContent = stocks.map(s => `NSE:${s.trading_symbol || s.symbol}`).join(',');
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `screener_export_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        addToast(`Downloaded ${stocks.length} symbols`, 'success');
+        navigator.clipboard.writeText(csvContent).then(() => {
+            addToast(`Copied ${stocks.length} symbols to clipboard`, 'success');
+        }).catch(err => {
+            addToast('Failed to copy to clipboard', 'error');
+            console.error('Clipboard error:', err);
+        });
     };
 
     const handleAddToPositions = async () => {
@@ -324,27 +331,48 @@ export default function Screener({ addToast }) {
         }
     };
 
-    const bullish = stocks.filter((s) => s.signal === 'Bullish').length;
-    const bearish = stocks.filter((s) => s.signal === 'Bearish').length;
+    const filteredStocks = stocks.filter((s) => {
+        const q = search.toLowerCase();
+        if (!q) return true;
+        return (
+            s.stock_name?.toLowerCase().includes(q) ||
+            (s.trading_symbol || s.symbol)?.toLowerCase().includes(q)
+        );
+    });
+
+    const bullish = filteredStocks.filter((s) => s.signal === 'Bullish').length;
+    const bearish = filteredStocks.filter((s) => s.signal === 'Bearish').length;
 
     return (
         <div className="page-enter">
+            {/* Toolbar for Search */}
+            <div className="toolbar" style={{ marginBottom: '12px' }}>
+                <input
+                    className="input input-search"
+                    type="text"
+                    placeholder="Search visible stocks..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    style={{ flex: 1 }}
+                />
+            </div>
+
             {/* Summary */}
             <div className="summary-cards">
-                <SummaryCard label="Showing" value={`${stocks.length} / ${total}`} sub="stocks matching filters" />
+                <SummaryCard label="Showing" value={`${filteredStocks.length} / ${total}`} sub="stocks matching filters" />
                 <SummaryCard label="Bullish" value={bullish} type="positive" size="small" sub="CP > EMA10 > EMA20" />
                 <SummaryCard label="Bearish" value={bearish} type="negative" size="small" sub="CP < EMA10 < EMA20" />
-                <SummaryCard label="Neutral" value={stocks.length - bullish - bearish} size="small" sub="Mixed signals" />
+                <SummaryCard label="Neutral" value={filteredStocks.length - bullish - bearish} size="small" sub="Mixed signals" />
             </div>
 
             {/* Group Stats based on results */}
-            {stocks.length > 0 && (
+            {filteredStocks.length > 0 && (
                 <div className="group-stats-container">
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '100%', marginBottom: '4px' }}>
                         Groups in result:
                     </div>
                     {Object.entries(
-                        stocks.reduce((acc, s) => {
+                        filteredStocks.reduce((acc, s) => {
                             const g = s.group || 'Ungrouped';
                             acc[g] = (acc[g] || 0) + 1;
                             return acc;
@@ -352,7 +380,16 @@ export default function Screener({ addToast }) {
                     )
                         .sort((a, b) => b[1] - a[1]) // Sort by count descending
                         .map(([name, count]) => (
-                            <div key={name} className="group-stat-item">
+                            <div
+                                key={name}
+                                className={`group-stat-item ${filters.group === (name === 'Ungrouped' ? '' : name) ? 'active-group-stat' : ''}`}
+                                style={{
+                                    cursor: 'pointer',
+                                    boxShadow: filters.group === (name === 'Ungrouped' ? '' : name) ? '0 0 0 2px var(--accent)' : 'none'
+                                }}
+                                onClick={() => handleGroupClick(name)}
+                                title={`Click to filter by ${name}`}
+                            >
                                 <span className="group-stat-name">{name}</span>
                                 <span className="group-stat-count">{count}</span>
                             </div>
@@ -513,7 +550,7 @@ export default function Screener({ addToast }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center' }}>
                         <button className="btn btn-primary" onClick={applyFilters} style={{ padding: '8px' }}>Apply Filters</button>
                         <button className="btn btn-secondary" onClick={resetFilters} style={{ padding: '8px' }}>Reset</button>
-                        <button className="btn btn-secondary" onClick={handleDownloadCSV} style={{ padding: '8px' }}>⬇️ CSV</button>
+                        <button className="btn btn-secondary" onClick={handleCopySymbols} style={{ padding: '8px' }}>📋 Copy</button>
                     </div>
 
                 </div>
@@ -527,7 +564,7 @@ export default function Screener({ addToast }) {
                             <div key={i} className="skeleton skeleton-row" />
                         ))}
                     </div>
-                ) : stocks.length === 0 ? (
+                ) : filteredStocks.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-icon">🔍</div>
                         <div className="empty-state-title">No stocks match your criteria</div>
@@ -562,7 +599,7 @@ export default function Screener({ addToast }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {stocks.map((stock) => {
+                            {filteredStocks.map((stock) => {
                                 const cp = parseFloat(stock.cp) || 0;
                                 const ema5 = parseFloat(stock.ema5) || 0;
                                 const ema10 = parseFloat(stock.ema10) || 0;

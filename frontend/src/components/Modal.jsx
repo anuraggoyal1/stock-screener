@@ -1,7 +1,9 @@
+import { createPortal } from 'react-dom';
+
 export default function Modal({ isOpen, onClose, title, children, footer }) {
     if (!isOpen) return null;
 
-    return (
+    return createPortal(
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
@@ -17,6 +19,7 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
                     </div>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

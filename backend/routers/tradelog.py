@@ -4,7 +4,8 @@ Trade Log Router
 Query completed trades and get summary statistics.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import Optional
 
 from backend.services.csv_store import CSVStore
@@ -113,3 +114,68 @@ async def get_summary():
             "worst_trade": trades[worst_idx],
         },
     }
+
+class EditTradeRequest(BaseModel):
+    original_buy_date: str
+    original_sell_date: str
+    original_buy_price: float
+    original_sell_price: float
+    original_quantity: int
+    
+    symbol: str
+    stock_name: str
+    buy_price: float
+    sell_price: float
+    quantity: int
+    buy_date: str
+    sell_date: str
+
+@router.delete("/{symbol}")
+async def delete_trade(symbol: str, buy_date: str, sell_date: str, buy_price: float, sell_price: float, quantity: int):
+    """Delete a specific trade from the log."""
+    criteria = {
+        "symbol": symbol.upper(),
+        "buy_date": buy_date,
+        "sell_date": sell_date,
+        "buy_price": buy_price,
+        "sell_price": sell_price,
+        "quantity": quantity
+    }
+    deleted = store.delete_one(criteria)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Trade not found.")
+    return {"status": "success", "message": "Trade deleted successfully"}
+
+
+@router.put("/{symbol}")
+async def edit_trade(symbol: str, req: EditTradeRequest):
+    """Edit a specific trade in the log (recalculates PnL)."""
+    criteria = {
+        "symbol": symbol.upper(),
+        "buy_date": req.original_buy_date,
+        "sell_date": req.original_sell_date,
+        "buy_price": req.original_buy_price,
+        "sell_price": req.original_sell_price,
+        "quantity": req.original_quantity
+    }
+    
+    pnl = (req.sell_price - req.buy_price) * req.quantity
+    pnl_pct = (pnl / (req.buy_price * req.quantity) * 100) if req.buy_price > 0 else 0
+    
+    updates = {
+        "symbol": req.symbol.upper(),
+        "stock_name": req.stock_name,
+        "buy_price": round(req.buy_price, 2),
+        "sell_price": round(req.sell_price, 2),
+        "quantity": req.quantity,
+        "buy_date": req.buy_date,
+        "sell_date": req.sell_date,
+        "pnl": round(pnl, 2),
+        "pnl_pct": round(pnl_pct, 2)
+    }
+    
+    success = store.update_one(criteria, updates)
+    if not success:
+        raise HTTPException(status_code=404, detail="Trade not found or no changes made.")
+        
+    return {"status": "success", "message": "Trade updated successfully"}

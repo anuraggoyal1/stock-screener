@@ -1,12 +1,74 @@
 import { useState, useEffect } from 'react';
 import SummaryCard from '../components/SummaryCard';
 import Modal from '../components/Modal';
-import { positionsAPI, ordersAPI, masterAPI } from '../services/api';
+import { positionsAPI, ordersAPI } from '../services/api';
 
 const formatCurrency = (val) => {
     const num = parseFloat(val);
     if (isNaN(num)) return '₹0.00';
     return '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const todayInputDate = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const emptyAddForm = () => ({
+    symbol: '',
+    stock_name: '',
+    buy_price: '',
+    buy_date: todayInputDate(),
+    quantity: 1,
+    stoploss: '',
+});
+
+const formatRelativeTime = (isoString) => {
+    if (!isoString) return 'Never';
+    try {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) {
+            const remainingMins = diffMins % 60;
+            return remainingMins > 0 ? `${diffHours}h ${remainingMins} min ago` : `${diffHours}h ago`;
+        }
+        if (diffDays < 7) {
+            const remainingHours = diffHours % 24;
+            return remainingHours > 0 ? `${diffDays}d ${remainingHours}h ago` : `${diffDays}d ago`;
+        }
+        return date.toLocaleDateString();
+    } catch {
+        return 'Invalid date';
+    }
+};
+
+const isValidPosition = (p) => {
+    const symbol = String(p?.symbol ?? '').trim();
+    if (!symbol || symbol.toLowerCase() === 'nan') return false;
+    const buyPrice = Number(p?.buy_price);
+    const quantity = Number(p?.quantity);
+    return Number.isFinite(buyPrice) && buyPrice > 0 && Number.isFinite(quantity) && quantity > 0;
+};
+
+const parsePositionsResponse = (res) => {
+    const body = res?.data;
+    if (Array.isArray(body?.data)) {
+        return { rows: body.data, summary: body.summary || {} };
+    }
+    if (Array.isArray(body)) {
+        return { rows: body, summary: {} };
+    }
+    return { rows: [], summary: {} };
 };
 
 export default function Positions({ addToast }) {
@@ -17,7 +79,7 @@ export default function Positions({ addToast }) {
 
     // Add position modal
     const [showAddModal, setShowAddModal] = useState(false);
-    const [addForm, setAddForm] = useState({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1, stoploss: '' });
+    const [addForm, setAddForm] = useState(emptyAddForm());
 
     // Sell modal
     const [sellPos, setSellPos] = useState(null);
@@ -28,12 +90,13 @@ export default function Positions({ addToast }) {
 
     const [sortConfig, setSortConfig] = useState({ key: 'buy_date', direction: 'desc' });
     const [refreshingSymbol, setRefreshingSymbol] = useState(null);
+    const [refreshingAll, setRefreshingAll] = useState(false);
 
     const handleRefreshOne = async (symbol) => {
         try {
             setRefreshingSymbol(symbol);
-            await masterAPI.refreshOne(symbol);
-            addToast(`Refreshed ${symbol}`, 'success');
+            const res = await positionsAPI.refreshOne(symbol);
+            addToast(res.data.message || `Refreshed ${symbol}`, 'success');
             await fetchData();
         } catch (err) {
             addToast(`Refresh failed for ${symbol}: ` + (err.response?.data?.detail || err.message), 'error');
@@ -42,18 +105,32 @@ export default function Positions({ addToast }) {
         }
     };
 
-    const fetchData = async () => {
+    const fetchData = async (params = {}) => {
         try {
             setLoading(true);
-            const res = await positionsAPI.getAll();
-            const dataWithIds = (res.data.data || []).map((p, idx) => ({
+            // console.log('Fetching positions with params:', params);
+            const res = await positionsAPI.getAll(params);
+            // console.log('Positions API response:', res);
+            const { rows, summary: nextSummary } = parsePositionsResponse(res);
+            // console.log('Parsed rows:', rows);
+            // console.log('Parsed summary:', nextSummary);
+            const dataWithIds = rows.filter(isValidPosition).map((p, idx) => ({
                 ...p,
                 id: `${p.symbol}-${p.buy_date}-${p.buy_price}-${p.quantity}-${idx}`
             }));
+            // console.log('Data with IDs:', dataWithIds);
             setPositions(dataWithIds);
-            setSummary(res.data.summary || {});
+            setSummary(nextSummary);
+
+            // Show a toast with the count for debugging
+            if (dataWithIds.length > 0) {
+                addToast(`Loaded ${dataWithIds.length} positions`, 'success');
+            } else {
+                addToast('No positions found', 'warning');
+            }
         } catch (err) {
             addToast('Failed to load positions: ' + (err.response?.data?.detail || err.message), 'error');
+            console.error('Error fetching positions:', err);
         } finally {
             setLoading(false);
         }
@@ -78,7 +155,7 @@ export default function Positions({ addToast }) {
             });
             addToast(`Position added for ${addForm.symbol}`, 'success');
             setShowAddModal(false);
-            setAddForm({ symbol: '', stock_name: '', buy_price: '', buy_date: '', quantity: 1, stoploss: '' });
+            setAddForm(emptyAddForm());
             fetchData();
         } catch (err) {
             addToast(err.response?.data?.detail || 'Failed to add position', 'error');
@@ -143,8 +220,25 @@ export default function Positions({ addToast }) {
     };
 
     const handleRefresh = async () => {
-        await fetchData();
-        addToast('Positions refreshed', 'success');
+        setRefreshingAll(true);
+        try {
+            console.log('Starting refresh...');
+            const res = await positionsAPI.refresh();
+            console.log('Refresh response:', res);
+            addToast(res.data.message || 'Live prices updated', 'success');
+            await fetchData();
+        } catch (err) {
+            console.error('Refresh error:', err);
+            if (err.response) {
+                addToast('Refresh failed: ' + (err.response.data?.detail || err.response.statusText || 'Unknown error'), 'error');
+            } else if (err.request) {
+                addToast('Refresh failed: Network error - no response received', 'error');
+            } else {
+                addToast('Refresh failed: ' + err.message, 'error');
+            }
+        } finally {
+            setRefreshingAll(false);
+        }
     };
 
     const requestSort = (key) => {
@@ -156,21 +250,33 @@ export default function Positions({ addToast }) {
     };
 
     const filtered = positions.filter((p) => {
+        if (!isValidPosition(p)) return false;
         const q = search.toLowerCase();
-        return p.symbol?.toLowerCase().includes(q) || p.stock_name?.toLowerCase().includes(q);
+        return (
+            String(p.symbol).toLowerCase().includes(q) ||
+            String(p.stock_name ?? '').toLowerCase().includes(q)
+        );
     });
 
     const sortedData = [...filtered].sort((a, b) => {
-        if (!sortConfig.key) return 0;
-        const aVal = a[sortConfig.key];
-        const bVal = b[sortConfig.key];
+      if (!sortConfig.key) return 0;
+      const aVal = a[sortConfig.key];
+      const bVal = b[sortConfig.key];
 
-        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      return sortConfig.direction === 'asc'
+        ? String(aVal).localeCompare(String(bVal))
+        : String(bVal).localeCompare(String(aVal));
     });
 
-    const pnlType = summary.total_pnl >= 0 ? 'positive' : 'negative';
+    const pnlType = (summary.total_pnl ?? 0) >= 0 ? 'positive' : 'negative';
 
     const getSortClass = (key) => {
         if (sortConfig.key !== key) return 'sortable';
@@ -198,7 +304,7 @@ export default function Positions({ addToast }) {
                 />
                 <SummaryCard
                     label="Open Positions"
-                    value={positions.length}
+                    value={filtered.length}
                 />
             </div>
 
@@ -206,7 +312,10 @@ export default function Positions({ addToast }) {
             <div className="toolbar">
                 <button
                     className="btn btn-primary"
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setAddForm(emptyAddForm());
+                        setShowAddModal(true);
+                    }}
                     id="btn-add-position"
                 >
                     + Add Position
@@ -223,9 +332,10 @@ export default function Positions({ addToast }) {
                     <button
                         className="btn btn-secondary"
                         onClick={handleRefresh}
+                        disabled={refreshingAll}
                         id="btn-refresh-positions"
                     >
-                        ↻ Refresh
+                        {refreshingAll ? '↻ Refreshing...' : '↻ Refresh All'}
                     </button>
                 </div>
             </div>
@@ -259,6 +369,9 @@ export default function Positions({ addToast }) {
                                 <th className={`text-right ${getSortClass('stoploss')}`} onClick={() => requestSort('stoploss')}>SL</th>
                                 <th className={`text-right ${getSortClass('pnl')}`} onClick={() => requestSort('pnl')}>P&L (₹)</th>
                                 <th className={`text-right ${getSortClass('pnl_pct')}`} onClick={() => requestSort('pnl_pct')}>P&L (%)</th>
+                                <th className={getSortClass('last_updated')} onClick={() => requestSort('last_updated')}>Refreshed</th>
+                                <th className="text-center">Daily</th>
+                                <th className="text-center">Weekly</th>
                                 <th className="text-center">Actions</th>
                             </tr>
                         </thead>
@@ -270,14 +383,43 @@ export default function Positions({ addToast }) {
                                 const buyPrice = parseFloat(pos.buy_price);
                                 const sl = parseFloat(pos.stoploss) || 0;
 
+                                const dEma4 = parseFloat(pos.d_ema4);
+                                const dEma7 = parseFloat(pos.d_ema7);
+                                const wEma4 = parseFloat(pos.w_ema4);
+                                const wEma7 = parseFloat(pos.w_ema7);
+
+                                const isDailyBlue = !isNaN(dEma4) && !isNaN(dEma7) && dEma4 <= dEma7;
+                                const isWeeklyBlue = !isNaN(wEma4) && !isNaN(wEma7) && wEma4 <= wEma7;
+                                const shouldBlink = isDailyBlue || isWeeklyBlue;
+
                                 let rowClass = '';
-                                if (cp < sl && sl > 0) {
+                                if (shouldBlink) {
+                                    rowClass = 'row-blink-red';
+                                } else if (cp < sl && sl > 0) {
                                     rowClass = 'row-stoploss';
                                 } else if (cp < buyPrice) {
                                     rowClass = 'row-negative';
                                 }
 
                                 const pnlClass = pnl >= 0 ? 'cell-positive' : 'cell-negative';
+
+                                let dailyLight = <span className="indicator-dot dot-gray" title="N/A"></span>;
+                                if (!isNaN(dEma4) && !isNaN(dEma7)) {
+                                    if (dEma4 > dEma7) {
+                                        dailyLight = <span className="indicator-dot dot-yellow" title={`Daily EMA4 (${dEma4}) > EMA7 (${dEma7})`}></span>;
+                                    } else {
+                                        dailyLight = <span className="indicator-dot dot-blue" title={`Daily EMA4 (${dEma4}) <= EMA7 (${dEma7})`}></span>;
+                                    }
+                                }
+
+                                let weeklyLight = <span className="indicator-dot dot-gray" title="N/A"></span>;
+                                if (!isNaN(wEma4) && !isNaN(wEma7)) {
+                                    if (wEma4 > wEma7) {
+                                        weeklyLight = <span className="indicator-dot dot-yellow" title={`Weekly EMA4 (${wEma4}) > EMA7 (${wEma7})`}></span>;
+                                    } else {
+                                        weeklyLight = <span className="indicator-dot dot-blue" title={`Weekly EMA4 (${wEma4}) <= EMA7 (${wEma7})`}></span>;
+                                    }
+                                }
 
                                 return (
                                     <tr key={pos.id} className={rowClass}>
@@ -288,7 +430,7 @@ export default function Positions({ addToast }) {
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 style={{ color: 'var(--accent)', textDecoration: 'none' }}
-                                            >
+                                              >
                                                 {pos.symbol}
                                             </a>
                                         </td>
@@ -303,6 +445,14 @@ export default function Positions({ addToast }) {
                                         <td className={`text-right ${pnlClass}`}>
                                             {pnlPct >= 0 ? '+' : ''}{pnlPct?.toFixed(2)}%
                                         </td>
+                                        <td
+                                            className="cell-muted"
+                                            title={pos.last_updated ? new Date(pos.last_updated).toLocaleString() : 'Not refreshed yet'}
+                                        >
+                                            {formatRelativeTime(pos.last_updated)}
+                                        </td>
+                                        <td className="text-center">{dailyLight}</td>
+                                        <td className="text-center">{weeklyLight}</td>
                                         <td className="text-center">
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                                 <button

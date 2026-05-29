@@ -6,3 +6,8 @@
 **/.DS_Store
 .git
 .env
+config.yaml
+data/
+!data/NSE_EQ.json
+!data/master.csv
+!data/tradelog.csv

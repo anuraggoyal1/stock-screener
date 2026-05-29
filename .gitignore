@@ -3,3 +3,5 @@ node_modules/
 config.yaml
 data/
 .DS_Store
+backend/services/__pycache__/*
+backend/routers/__pycache__/*

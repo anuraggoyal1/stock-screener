@@ -20,6 +20,35 @@ import os
 router = APIRouter(prefix="/api/upstox", tags=["Upstox"])
 
 
+def _persist_access_token(token: str) -> str:
+    """Write access token to config (local YAML or GCP secret) and update runtime."""
+    current_config = dict(app_config.config)
+    upstox_cfg = dict(current_config.get("upstox") or {})
+    upstox_cfg["access_token"] = token
+    current_config["upstox"] = upstox_cfg
+
+    is_gcp = os.environ.get("ENABLE_GCP_SECRETS") == "true"
+
+    if is_gcp:
+        from backend.services.secrets import update_config_secret
+
+        if not update_config_secret(current_config):
+            raise HTTPException(status_code=500, detail="Failed to update Google Secret")
+        msg = "Access token updated in Google Secret Manager."
+    else:
+        try:
+            with open(app_config.CONFIG_PATH, "w") as f:
+                yaml.safe_dump(current_config, f, sort_keys=False)
+            msg = "Access token saved to local config.yaml."
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Local Write Failure: {e}")
+
+    app_config.config = current_config
+    app_config.UPSTOX_ACCESS_TOKEN = token
+    upstox_svc.UPSTOX_ACCESS_TOKEN = token
+    return msg
+
+
 @router.get("/auth-url")
 async def upstox_auth_url():
     """
@@ -57,6 +86,33 @@ class TokenPayload(BaseModel):
     access_token: str
 
 
+@router.get("/complete-auth")
+async def upstox_complete_auth(
+    code: str = Query(..., description="Authorization code from Upstox OAuth redirect"),
+):
+    """
+    Exchange OAuth code for access token and persist it (used by frontend /callback page).
+    """
+    try:
+        token_data = await exchange_code_for_token(code)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+
+    if not isinstance(token_data, dict) or "access_token" not in token_data:
+        raise HTTPException(status_code=400, detail="Invalid token response from Upstox")
+
+    access_token = str(token_data["access_token"]).strip()
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Empty access_token from Upstox")
+
+    msg = _persist_access_token(access_token)
+    return {
+        "status": "success",
+        "message": f"{msg} Runtime updated.",
+        "token": token_data,
+    }
+
+
 @router.post("/save-token")
 async def upstox_save_token(payload: TokenPayload):
     """
@@ -67,38 +123,7 @@ async def upstox_save_token(payload: TokenPayload):
     if not token:
         raise HTTPException(status_code=400, detail="access_token is required")
 
-    # Clone current memory config
-    current_config = dict(app_config.config)
-    upstox_cfg = dict(current_config.get("upstox") or {})
-    upstox_cfg["access_token"] = token
-    current_config["upstox"] = upstox_cfg
-
-    # Decide where to persist: Secret Manager or Local YAML
-    is_gcp = os.environ.get("ENABLE_GCP_SECRETS") == "true"
-    
-    if is_gcp:
-        try:
-            from backend.services.secrets import update_config_secret
-            success = update_config_secret(current_config)
-            if not success:
-                raise Exception("Failed to update Google Secret")
-            msg = "Access token updated in Google Secret Manager."
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"GCP Sync Failure: {e}")
-    else:
-        # Local fallback
-        try:
-            with open(app_config.CONFIG_PATH, "w") as f:
-                yaml.safe_dump(current_config, f, sort_keys=False)
-            msg = "Access token saved to local config.yaml."
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Local Write Failure: {e}")
-
-    # Update runtime memory
-    app_config.config = current_config
-    app_config.UPSTOX_ACCESS_TOKEN = token
-    upstox_svc.UPSTOX_ACCESS_TOKEN = token
-
+    msg = _persist_access_token(token)
     return {
         "status": "success",
         "message": f"{msg} Runtime updated.",

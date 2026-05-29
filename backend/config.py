@@ -4,7 +4,8 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+BACKEND_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = BACKEND_DIR / "config.yaml"
 DATA_DIR = BASE_DIR / "data"
 
 
@@ -61,6 +62,9 @@ AUTO_REFRESH = config["scheduler"].get("auto_refresh", False)  # Periodic auto-r
 APP_HOST = config["app"]["host"]
 APP_PORT = config["app"]["port"]
 CORS_ORIGINS = config["app"]["cors_origins"]
+
+# Mode
+PAPER_TRADE = str(config.get("paper_trade", "false")).lower() == "true"
 
 # Robust AUTH_KEY search
 AUTH_KEY = (

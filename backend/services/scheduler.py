@@ -85,6 +85,24 @@ async def refresh_master_data():
     print(f"[Scheduler] Master data refresh completed at {datetime.now().isoformat()}")
 
 
+async def refresh_positions_data():
+    """
+    Refresh all positions in positions.csv with latest prices and EMAs.
+    Runs every 5 minutes during market hours.
+    """
+    if not _is_market_hours():
+        print(f"[Scheduler] Outside market hours ({MARKET_OPEN}-{MARKET_CLOSE}). Skipping positions refresh.")
+        return
+
+    print(f"[Scheduler] Starting positions data refresh at {datetime.now().isoformat()}")
+    try:
+        from backend.routers.positions import refresh_all_positions
+        await refresh_all_positions()
+        print(f"[Scheduler] Positions data refresh completed at {datetime.now().isoformat()}")
+    except Exception as e:
+        print(f"[Scheduler] Error refreshing positions data in scheduler: {e}")
+
+
 def start_scheduler():
     """Start the periodic scheduler."""
     scheduler.add_job(
@@ -92,6 +110,13 @@ def start_scheduler():
         trigger=IntervalTrigger(minutes=SCHEDULER_INTERVAL),
         id="refresh_master",
         name="Refresh Master Watchlist",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_positions_data,
+        trigger=IntervalTrigger(minutes=SCHEDULER_INTERVAL),
+        id="refresh_positions",
+        name="Refresh Positions Data",
         replace_existing=True,
     )
     scheduler.start()

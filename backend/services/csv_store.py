@@ -37,7 +37,12 @@ class CSVStore:
             
             # Use pandas inherent ability to replace NaN with None for object columns
             df = df.astype(object).where(pd.notnull(df), None)
-            return df.to_dict(orient="records")
+            records = df.to_dict(orient="records")
+            for row in records:
+                for key, val in list(row.items()):
+                    if isinstance(val, str) and val.strip().lower() in ("nan", "none", ""):
+                        row[key] = None
+            return records
         except (pd.errors.EmptyDataError, FileNotFoundError):
             return []
 
@@ -50,14 +55,28 @@ class CSVStore:
 
     def write_all(self, records: list[dict]):
         """Write all records to the CSV file (overwrites)."""
+        existing_cols = []
+        if self.filepath.exists():
+            try:
+                existing_cols = pd.read_csv(self.filepath, nrows=0).columns.tolist()
+            except Exception:
+                pass
+
         if not records:
             # Write empty file with just headers from current file
-            df = self.read_df()
-            if not df.empty:
-                df.head(0).to_csv(self.filepath, index=False)
-                self._sync_to_gcs()
+            if existing_cols:
+                pd.DataFrame(columns=existing_cols).to_csv(self.filepath, index=False)
+            else:
+                df = self.read_df()
+                if not df.empty:
+                    df.head(0).to_csv(self.filepath, index=False)
+            self._sync_to_gcs()
             return
+
         df = pd.DataFrame(records)
+        if existing_cols:
+            all_cols = existing_cols + [c for c in df.columns if c not in existing_cols]
+            df = df.reindex(columns=all_cols)
         df.to_csv(self.filepath, index=False)
         self._sync_to_gcs()
 

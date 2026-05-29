@@ -59,7 +59,18 @@ app.add_middleware(
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
+# Development mode flag – if true, API key checks are bypassed.
+import os
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+
 async def get_api_key(api_key: str = Security(api_key_header)):
+    """Validate API key unless DEV_MODE is enabled.
+
+    In development mode we allow requests without a key to simplify UI testing.
+    """
+    if DEV_MODE:
+        # Bypass authentication; return a dummy value.
+        return api_key or "dev-key"
     if not AUTH_KEY:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -77,17 +88,30 @@ protected = [Depends(get_api_key)]
 
 # Register API routers
 # Important: Use prefix="" because routers ALREADY have "/api/..." in their setup
-app.include_router(master.router, dependencies=protected)
-app.include_router(screener.router, dependencies=protected)
-app.include_router(positions.router, dependencies=protected)
-app.include_router(orders.router, dependencies=protected)
-app.include_router(tradelog.router, dependencies=protected)
-app.include_router(backtest.router, dependencies=protected)
-app.include_router(upstox_auth.router) # Public
+if DEV_MODE:
+    # In development, expose routers without auth protection
+    app.include_router(master.router)
+    app.include_router(screener.router)
+    app.include_router(positions.router)
+    app.include_router(orders.router)
+    app.include_router(tradelog.router)
+    app.include_router(backtest.router)
+    app.include_router(upstox_auth.router)  # Public
+else:
+    # Production – protect all except Upstox auth
+    app.include_router(master.router, dependencies=protected)
+    app.include_router(screener.router, dependencies=protected)
+    app.include_router(positions.router, dependencies=protected)
+    app.include_router(orders.router, dependencies=protected)
+    app.include_router(tradelog.router, dependencies=protected)
+    app.include_router(backtest.router, dependencies=protected)
+    app.include_router(upstox_auth.router)  # Public
 
 @app.get("/api/health")
 async def health(api_key: str = Security(api_key_header)):
-    """Used by frontend to verify the API Key."""
+    """Used by frontend to verify the API Key. Bypassed in DEV_MODE."""
+    if DEV_MODE:
+        return {"status": "healthy"}
     if not AUTH_KEY or api_key != AUTH_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
     return {"status": "healthy"}

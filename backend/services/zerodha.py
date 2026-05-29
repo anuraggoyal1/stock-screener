@@ -6,13 +6,16 @@ When access_token is not configured, simulates orders for development.
 """
 
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
 from backend.config import (
     ZERODHA_API_KEY,
     ZERODHA_ACCESS_TOKEN,
     DEFAULT_ORDER_TYPE,
     DEFAULT_QUANTITY,
     DEFAULT_EXCHANGE,
+    PAPER_TRADE,
 )
 
 BASE_URL = "https://api.kite.trade"
@@ -20,10 +23,13 @@ BASE_URL = "https://api.kite.trade"
 
 def _is_configured() -> bool:
     """Check if Zerodha API credentials are configured."""
+    if PAPER_TRADE:
+        return False
+        
     return (
         ZERODHA_ACCESS_TOKEN
-        and ZERODHA_ACCESS_TOKEN != ""
-        and ZERODHA_API_KEY != "YOUR_ZERODHA_API_KEY"
+        and str(ZERODHA_ACCESS_TOKEN).strip() != ""
+        and str(ZERODHA_API_KEY).lower() != "your_zerodha_api_key"
     )
 
 
@@ -64,7 +70,7 @@ async def place_order(
 
     if not _is_configured():
         # Simulate order for development
-        mock_order_id = f"MOCK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{symbol}"
+        mock_order_id = f"MOCK-{datetime.now(IST).strftime('%Y%m%d%H%M%S')}-{symbol}"
         return {
             "status": "success",
             "order_id": mock_order_id,
@@ -77,7 +83,7 @@ async def place_order(
                 "order_type": o_type,
                 "exchange": exch,
                 "price": price,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(IST).isoformat(),
             },
         }
 

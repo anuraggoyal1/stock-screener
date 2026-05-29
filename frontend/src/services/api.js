@@ -55,10 +55,12 @@ export const screenerAPI = {
 
 // ---- Positions ----
 export const positionsAPI = {
-  getAll: () => api.get('/positions'),
+  getAll: (params) => api.get('/positions', { params }),
   add: (position) => api.post('/positions', position),
   update: (symbol, data, originalDetails) => api.put(`/positions/${symbol}`, data, { params: originalDetails }),
   delete: (symbol, params) => api.delete(`/positions/${symbol}`, { params }),
+  refresh: () => api.post('/positions/refresh'),
+  refreshOne: (symbol) => api.post(`/positions/${symbol}/refresh`),
 };
 
 // ---- Orders ----
@@ -71,12 +73,15 @@ export const ordersAPI = {
 export const tradelogAPI = {
   getAll: (params) => api.get('/tradelog', { params }),
   getSummary: () => api.get('/tradelog/summary'),
+  delete: (symbol, params) => api.delete(`/tradelog/${symbol}`, { params }),
+  update: (symbol, data) => api.put(`/tradelog/${symbol}`, data),
 };
 
 // ---- Upstox Auth ----
 export const upstoxAPI = {
   getAuthUrl: () => api.get('/upstox/auth-url'),
   exchangeToken: (code) => api.get('/upstox/exchange-token', { params: { code } }),
+  completeAuth: (code) => api.get('/upstox/complete-auth', { params: { code } }),
   saveToken: (access_token) => api.post('/upstox/save-token', { access_token }),
 };
 

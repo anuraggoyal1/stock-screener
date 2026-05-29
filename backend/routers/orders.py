@@ -75,6 +75,13 @@ async def buy_stock(order: BuyOrder):
         "buy_price": round(buy_price, 2),
         "buy_date": str(date.today()),
         "quantity": order.quantity,
+        "stoploss": 0.0,
+        "current_price": None,
+        "d_ema4": None,
+        "d_ema7": None,
+        "w_ema4": None,
+        "w_ema7": None,
+        "last_updated": None,
     }
     positions_store.add_row(position)
 
@@ -148,14 +155,20 @@ async def sell_stock(order: SellOrder):
     }
     tradelog_store.add_row(trade)
 
-    # Remove from positions (specifically the one we matched)
+    # Identify the specific position to update or remove
     criteria = {"symbol": order.symbol.upper()}
     if order.buy_date:
         criteria["buy_date"] = order.buy_date
     if order.buy_price is not None:
         criteria["buy_price"] = order.buy_price
-    
-    positions_store.delete_one(criteria)
+
+    if sell_qty < int(float(position.get("quantity", 0))):
+        # Partial sell: reduce quantity instead of deleting
+        remaining_qty = int(float(position.get("quantity", 0))) - sell_qty
+        positions_store.update_one(criteria, {"quantity": remaining_qty})
+    else:
+        # Full sell: completely remove from open positions
+        positions_store.delete_one(criteria)
 
     return {
         "status": "success",

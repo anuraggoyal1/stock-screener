@@ -8,13 +8,21 @@ import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
 import asyncio
 import math
 
 from backend.services.csv_store import CSVStore
 from backend.services.upstox import get_historical_candles, get_current_price, get_monthly_ath
 from backend.services.ema import calculate_ema
+from backend.services.market_refresh import (
+    merge_live_into_daily_closes,
+    merge_live_into_weekly_closes,
+    normalize_candles_chronological,
+    quote_date_from_live_ohlc,
+)
 from backend.config import MASTER_CSV, NSE_EQ_JSON, L5_OPEN_MIN_PCT, L5_OPEN_MAX_PCT, WEEKLY_L5_OPEN_MIN_PCT, WEEKLY_L5_OPEN_MAX_PCT
 
 router = APIRouter(prefix="/api/master", tags=["Master Watchlist"])
@@ -167,7 +175,7 @@ async def add_stock(stock: StockCreate):
         "w_l5_open": 0.0,
         "w_OtoC_pct_change": 0.0,
         "weekly_l5_distance": 0.0,
-        "last_updated": datetime.now().isoformat(),
+        "last_updated": datetime.now(IST).isoformat(),
     }
     store.add_row(row)
     return {"status": "success", "data": row, "message": f"Stock {stock.trading_symbol} added"}
@@ -222,47 +230,31 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         today_live_close = float(quote.get("last_price") or quote.get("close") or 0)
         live_ohlc = quote.get("live_ohlc") or {}
         today_date_str = datetime.now().strftime("%Y-%m-%d")
+
+        # Safety Guard: If we got a mock-like or zero price during a bulk refresh, 
+        # and we expected real data, skip updating this stock to prevent corruption.
+        if today_live_close == 0 or (today_live_close == 1000.0 and stock.get("cp", 0) != 1000.0):
+             # Skip this stock, return original
+             print(f"[Master Refresh] Skipping {trading_symbol} due to potentially invalid price: {today_live_close}")
+             return sanitize_value(stock)
         
-        # 2. Fetch Historical Candles (enough to get 100 trading days)
-        # We fetch 160 calendar days to safely get 100+ trading candles.
+        # 2. Fetch daily candles once; merge live close (shared with positions refresh)
         candles = await get_historical_candles(instrument_key, days=160)
         if not candles:
-            return stock
-        
-        # Ensure chronological order
-        if candles and len(candles) > 1:
-            if candles[0].get("date", "") > candles[-1].get("date", ""):
-                candles_reversed = list(reversed(candles))
-            else:
-                candles_reversed = candles
-        else:
-            candles_reversed = candles or []
-        
-        # Slice to exactly 100 candles for EMA calculation as requested
+            return sanitize_value(stock)
+
+        candles_reversed = normalize_candles_chronological(candles)
         if len(candles_reversed) > 100:
             candles_reversed = candles_reversed[-100:]
-            
-        last_candle_date = candles_reversed[-1].get("date", "")[:10] if candles_reversed else ""
-        
-        # Get quote date from timestamp if available
-        quote_ts = live_ohlc.get("ts", 0)
-        if quote_ts > 0:
-            # Convert ms to sec, then to IST (approximate by adding 5.5 hours or just checking date)
-            quote_date = datetime.fromtimestamp(quote_ts / 1000 + (5.5 * 3600)).strftime("%Y-%m-%d")
-        else:
-            quote_date = today_date_str
 
-        close_prices = [c["close"] for c in candles_reversed]
-        
-        # Only append/update if we have a valid live price
-        if today_live_close > 0:
-            if quote_date > last_candle_date:
-                # New trading session not in historical yet
-                close_prices.append(today_live_close)
-            elif quote_date == last_candle_date:
-                # Update current session with latest live price
-                close_prices[-1] = today_live_close
-            # If quote_date < last_candle_date, historical is ahead or quote is stale, do nothing.
+        close_prices = merge_live_into_daily_closes(
+            candles_reversed, today_live_close, live_ohlc
+        )
+        if not close_prices:
+            return sanitize_value(stock)
+
+        last_candle_date = candles_reversed[-1].get("date", "")[:10] if candles_reversed else ""
+        quote_date = quote_date_from_live_ohlc(live_ohlc, today_date_str)
 
         # 3. EMA Calculation: use exactly 100 data points if available
         # (or whatever we have, if less than 100)
@@ -271,15 +263,24 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
         ema20 = calculate_ema(close_prices, 20) if len(close_prices) >= 20 else 0.0
         
         # 4. ATH: Monthly candles (10 years)
-        # This remains a separate call per stock
         existing_ath = float(stock.get("ath", 0))
         try:
             ath_monthly = await get_monthly_ath(instrument_key, years=10)
-            ath = max(ath_monthly, existing_ath) if ath_monthly > 0 else existing_ath
+            
+            # If existing ATH looks like corruption (specifically the mock 1000.0) 
+            # and current price or monthly ATH is different, trust the monthly/current.
+            if existing_ath == 1000.0 and abs(ath_monthly - 1000.0) > 1.0:
+                ath = max(ath_monthly, today_live_close)
+            else:
+                ath = max(ath_monthly, existing_ath, today_live_close) if ath_monthly > 0 else max(existing_ath, today_live_close)
         except Exception:
             all_highs = [c["high"] for c in candles_reversed]
             ath_daily = max(all_highs) if all_highs else 0.0
-            ath = max(existing_ath, ath_daily)
+            
+            if existing_ath == 1000.0 and abs(ath_daily - 1000.0) > 1.0:
+                ath = max(ath_daily, today_live_close)
+            else:
+                ath = max(existing_ath, ath_daily, today_live_close)
 
         # 5. Extract Prev Day O->C % from captured historical series (Save 1 Request!)
         prev_change_pct = 0.0
@@ -352,7 +353,7 @@ async def refresh_stock_data(stock: dict, quote: Optional[dict] = None) -> dict:
             "instrument_key": instrument_key,
             "open": today_open,
             "l5_open": round(l5_open, 2),
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": datetime.now(IST).isoformat(),
         })
 
     except HTTPException:
@@ -494,69 +495,44 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
             quote = await get_current_price(instrument_key)
             
         today_live_close = float(quote.get("last_price") or quote.get("close") or 0)
+
+        # Safety Guard: If we got a mock-like or zero price during a bulk refresh, 
+        # and we expected real data, skip updating this stock to prevent corruption.
+        if today_live_close == 0 or (today_live_close == 1000.0 and stock.get("cp", 0) != 1000.0):
+             # Skip this stock, return original
+             print(f"[Master Weekly] Skipping {trading_symbol} due to potentially invalid price: {today_live_close}")
+             return sanitize_value(stock)
         
-        # Fetch 3 years of weekly candles (~156 weeks = 1095 calendar days) for solid EMA warmup.
-        # More history ensures the EMA is well-settled before we reach the candles we care about.
+        live_ohlc = quote.get("live_ohlc") or {}
+
+        # Weekly candles once; merge live close (shared with positions refresh; EMA 4/5 for master)
         candles = await get_historical_candles(instrument_key, days=1095, unit="weeks", v3_interval="1")
         if not candles:
             return stock
-            
-        # Ensure chronological order (oldest → newest)
-        if len(candles) > 1 and candles[0].get("date", "") > candles[-1].get("date", ""):
-            candles = list(reversed(candles))
-
+        candles = normalize_candles_chronological(candles)
         print(f"[Master Weekly] {trading_symbol}: received {len(candles)} weekly candles")
-            
-        close_prices = [c["close"] for c in candles]
-        
-        # Determine today's date and the date of the last (most recent) weekly candle.
-        # Weekly candles from Upstox are labelled with the Monday of that week.
-        live_ohlc = quote.get("live_ohlc") or {}
-        quote_ts = live_ohlc.get("ts", 0)
-        if quote_ts > 0:
-            quote_date = datetime.fromtimestamp(quote_ts / 1000 + (5.5 * 3600)).strftime("%Y-%m-%d")
-        else:
-            quote_date = datetime.now().strftime("%Y-%m-%d")
-            
-        last_candle_date = candles[-1].get("date", "")[:10] if candles else ""
-        
-        # For weekly candles the last_candle_date is the Monday of the current (or last completed)
-        # week, so a simple date comparison doesn't work.  We compare ISO week numbers instead:
-        # - Same ISO week → update the last candle with today's live close (mid-week update).
-        # - Newer week     → append a fresh candle (a new week has started).
-        if today_live_close > 0 and last_candle_date:
-            try:
-                q_iso = datetime.strptime(quote_date, "%Y-%m-%d").isocalendar()        # (year, week, day)
-                lc_iso = datetime.strptime(last_candle_date, "%Y-%m-%d").isocalendar() # (year, week, day)
-                if (q_iso[0], q_iso[1]) > (lc_iso[0], lc_iso[1]):
-                    # Quote is from a newer week — append
-                    close_prices.append(today_live_close)
-                elif (q_iso[0], q_iso[1]) == (lc_iso[0], lc_iso[1]):
-                    # Same week — update the last candle with live price
-                    close_prices[-1] = today_live_close
-                # If quote is somehow older than the last candle, don't touch the list.
-            except Exception:
-                # Fallback: just update last candle
-                close_prices[-1] = today_live_close
 
-        # ── Stability fix ───────────────────────────────────────────────────────
-        # The API may return a slightly different candle count each call (e.g. 58
-        # vs 62 depending on server-side rounding of the date window).  If the
-        # seed SMA is computed from a different number of candles the EMA chain
-        # shifts.  Solution: always pass the FULL history for warmup so EMA is
-        # well-settled, then limit to the last 52 candles for the final
-        # calculation — a fixed-length window produces identical results every run.
-        EMA_WINDOW = 52
-        if len(close_prices) > EMA_WINDOW:
-            close_prices = close_prices[-EMA_WINDOW:]
-                
+        close_prices = merge_live_into_weekly_closes(candles, today_live_close, live_ohlc)
+        if not close_prices:
+            return stock
+
         w_ema4 = calculate_ema(close_prices, 4) if len(close_prices) >= 4 else 0.0
         w_ema5 = calculate_ema(close_prices, 5) if len(close_prices) >= 5 else 0.0
         
         cp = today_live_close if today_live_close > 0 else float(stock.get("cp", 0))
-        ath = float(stock.get("ath", 0))
-        if cp > ath:
-            ath = cp
+        existing_ath = float(stock.get("ath", 0))
+
+        # Healing / Updating ATH
+        # If it looks like mock data (1000.0) from a previous failed run, 
+        # we'll let refresh_all (Daily) handle the deep history reset, 
+        # but we can also do a quick check here.
+        if existing_ath == 1000.0 and cp != 1000.0:
+            ath = cp # Start recovery
+        else:
+            ath = max(existing_ath, cp)
+        
+        # We don't have monthly high here easily, but we'll stick to max(existing, cp) 
+        # for safety, as real ATH is handled better by the daily refresh logic.
 
         print(f"[Master Weekly] {trading_symbol}: close_prices count={len(close_prices)}, W-EMA4={round(w_ema4,2)}, W-EMA5={round(w_ema5,2)}")
 
@@ -611,7 +587,7 @@ async def refresh_weekly_stock_data(stock: dict, quote: Optional[dict] = None) -
             "w_l5_open": round(w_l5_open, 2),
             "w_OtoC_pct_change": w_otoc_pct,
             "weekly_l5_distance": weekly_l5_distance,
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": datetime.now(IST).isoformat(),
         })
     except HTTPException:
         raise

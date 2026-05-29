@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import SummaryCard from '../components/SummaryCard';
+import Modal from '../components/Modal';
 import { tradelogAPI } from '../services/api';
 
 const formatCurrency = (val) => {
@@ -15,6 +16,51 @@ export default function TradeLog({ addToast }) {
     const [search, setSearch] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [editTrade, setEditTrade] = useState(null);
+    const [editForm, setEditForm] = useState(null);
+
+    const handleDelete = async (trade) => {
+        if (!window.confirm(`Delete trade log for ${trade.symbol}? This cannot be undone.`)) return;
+        try {
+            await tradelogAPI.delete(trade.symbol, {
+                buy_date: trade.buy_date,
+                sell_date: trade.sell_date,
+                buy_price: trade.buy_price,
+                sell_price: trade.sell_price,
+                quantity: trade.quantity
+            });
+            addToast(`Trade ${trade.symbol} deleted`, 'success');
+            fetchData();
+        } catch (err) {
+            addToast('Failed to delete trade: ' + (err.response?.data?.detail || err.message), 'error');
+        }
+    };
+
+    const handleEditSave = async () => {
+        if (!editTrade || !editForm) return;
+        try {
+            await tradelogAPI.update(editTrade.symbol, {
+                original_buy_date: editTrade.buy_date,
+                original_sell_date: editTrade.sell_date,
+                original_buy_price: parseFloat(editTrade.buy_price),
+                original_sell_price: parseFloat(editTrade.sell_price),
+                original_quantity: parseInt(editTrade.quantity),
+
+                symbol: editForm.symbol.toUpperCase(),
+                stock_name: editForm.stock_name,
+                buy_price: parseFloat(editForm.buy_price),
+                sell_price: parseFloat(editForm.sell_price),
+                quantity: parseInt(editForm.quantity),
+                buy_date: editForm.buy_date,
+                sell_date: editForm.sell_date
+            });
+            addToast(`Trade updated`, 'success');
+            setEditTrade(null);
+            fetchData();
+        } catch (err) {
+            addToast('Failed to update trade: ' + (err.response?.data?.detail || err.message), 'error');
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -138,6 +184,7 @@ export default function TradeLog({ addToast }) {
                                 <th>Sell Date</th>
                                 <th className="text-right">P&L (₹)</th>
                                 <th className="text-right">P&L (%)</th>
+                                <th className="text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -170,6 +217,27 @@ export default function TradeLog({ addToast }) {
                                         <td className={`text-right ${pnlClass}`}>
                                             {pnlPct >= 0 ? '+' : ''}{pnlPct?.toFixed(2)}%
                                         </td>
+                                        <td className="text-center">
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button
+                                                    className="btn btn-icon"
+                                                    onClick={() => {
+                                                        setEditTrade(trade);
+                                                        setEditForm({ ...trade });
+                                                    }}
+                                                    title="Edit Trade"
+                                                >
+                                                    ✏️
+                                                </button>
+                                                <button
+                                                    className="btn btn-icon danger"
+                                                    onClick={() => handleDelete(trade)}
+                                                    title="Delete Trade"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -182,11 +250,101 @@ export default function TradeLog({ addToast }) {
                                     {totalPnl >= 0 ? '+' : ''}{formatCurrency(totalPnl)}
                                 </td>
                                 <td></td>
+                                <td></td>
                             </tr>
                         </tbody>
                     </table>
                 )}
             </div>
+
+            {/* Edit Trade Modal */}
+            <Modal
+                isOpen={!!editTrade}
+                onClose={() => setEditTrade(null)}
+                title={`Edit Trade: ${editTrade?.symbol}`}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setEditTrade(null)}>Cancel</button>
+                        <button className="btn btn-primary" onClick={handleEditSave}>Save Changes</button>
+                    </>
+                }
+            >
+                {editForm && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div className="form-row">
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Symbol</label>
+                                <input
+                                    className="input"
+                                    value={editForm.symbol}
+                                    onChange={(e) => setEditForm({ ...editForm, symbol: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 2 }}>
+                                <label className="form-label">Stock Name</label>
+                                <input
+                                    className="input"
+                                    value={editForm.stock_name}
+                                    onChange={(e) => setEditForm({ ...editForm, stock_name: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-row">
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Buy Price</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={editForm.buy_price}
+                                    onChange={(e) => setEditForm({ ...editForm, buy_price: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Sell Price</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    step="0.05"
+                                    value={editForm.sell_price}
+                                    onChange={(e) => setEditForm({ ...editForm, sell_price: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Quantity</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    value={editForm.quantity}
+                                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-row">
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Buy Date</label>
+                                <input
+                                    className="input"
+                                    type="date"
+                                    value={editForm.buy_date}
+                                    onChange={(e) => setEditForm({ ...editForm, buy_date: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label">Sell Date</label>
+                                <input
+                                    className="input"
+                                    type="date"
+                                    value={editForm.sell_date}
+                                    onChange={(e) => setEditForm({ ...editForm, sell_date: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }

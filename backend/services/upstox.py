@@ -38,11 +38,13 @@ MOCK_PRICES = {
 
 
 def _is_configured() -> bool:
-    """Check if Upstox API credentials are configured."""
+    """Check if Upstox API credentials are configured.
+    Note: PAPER_TRADE does NOT affect market data fetching — only order placement.
+    """
     return (
-        UPSTOX_ACCESS_TOKEN
-        and UPSTOX_ACCESS_TOKEN != ""
-        and UPSTOX_API_KEY != "YOUR_UPSTOX_API_KEY"
+        bool(UPSTOX_ACCESS_TOKEN)
+        and str(UPSTOX_ACCESS_TOKEN).strip() != ""
+        and str(UPSTOX_API_KEY).lower() not in ("your_upstox_api_key", "")
     )
 
 
@@ -57,10 +59,11 @@ def _get_headers() -> dict:
 
 def get_auth_url() -> str:
     """Generate Upstox OAuth authorization URL."""
+    redirect = quote(UPSTOX_REDIRECT_URI, safe="")
     return (
         f"https://api.upstox.com/v2/login/authorization/dialog"
         f"?client_id={UPSTOX_API_KEY}"
-        f"&redirect_uri={UPSTOX_REDIRECT_URI}"
+        f"&redirect_uri={redirect}"
         f"&response_type=code"
     )
 
@@ -80,6 +83,9 @@ async def exchange_code_for_token(code: str) -> dict:
         )
         data = response.json()
         print("[Upstox] exchange_code_for_token status=", response.status_code, "body=", data)
+        if response.status_code >= 400:
+            detail = data.get("message") or data.get("error") or data
+            raise HTTPException(status_code=400, detail=f"Upstox token exchange failed: {detail}")
         return data
 
 
@@ -332,10 +338,17 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
     Fetch current prices for multiple symbols using v3 API.
     """
     if not _is_configured():
-        return {
-            ident: MOCK_PRICES.get(ident, {"close": 1000.0, "open": 995.0, "high": 1010.0, "low": 990.0})
-            for ident in identifiers
-        }
+        results = {}
+        for ident in identifiers:
+            symbol = ident.split("|")[-1] if "|" in ident else ident
+            quote_data = {
+                **MOCK_PRICES.get(symbol, {"close": 1000.0, "open": 995.0, "high": 1010.0, "low": 990.0}),
+                "last_price": MOCK_PRICES.get(symbol, {"close": 1000.0}).get("close", 1000.0)
+            }
+            results[ident] = quote_data
+            results[symbol.upper()] = quote_data
+            results[symbol] = quote_data
+        return results
 
     keys = []
     for ident in identifiers:
@@ -361,10 +374,12 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
             )
 
         if response.status_code == 401:
-            raise HTTPException(status_code=400, detail="Invalid Upstox Token. Please reconnect your Upstox account.")
+            print(f"[Upstox] get_multiple_quotes: Token expired or invalid (401). Raising error.")
+            raise HTTPException(status_code=400, detail="Upstox access token expired. Please re-authenticate in Settings.")
 
         if response.status_code != 200:
             print(f"[Upstox] get_multiple_quotes Error {response.status_code}: {response.text}")
+            # For other errors (like rate limits or server issues), return empty so we don't save bad data
             return {}
 
         try:
@@ -375,11 +390,17 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
     results = {}
     if "data" in data and isinstance(data["data"], dict):
         for key, entry in data["data"].items():
-            symbol = key.split("|")[-1] if "|" in key else key
+            print(f"[Upstox] get_multiple_quotes response key: {key}")
+            
+            # Extract possible IDs from key (can be 'NSE_EQ:AJANTPHARM' or 'NSE_EQ|INE...')
+            # Replace colon with pipe for uniform splitting
+            norm_key = key.replace(":", "|")
+            parts = norm_key.split("|")
+            
             live_ohlc = entry.get("live_ohlc") or {}
             last_price = entry.get("last_price", live_ohlc.get("close", 0.0))
             
-            results[symbol] = {
+            quote_data = {
                 "open": live_ohlc.get("open", 0.0),
                 "high": live_ohlc.get("high", 0.0),
                 "low": live_ohlc.get("low", 0.0),
@@ -388,5 +409,18 @@ async def get_multiple_quotes(identifiers: list[str]) -> dict:
                 "live_ohlc": live_ohlc,
                 "prev_ohlc": entry.get("prev_ohlc") or {}
             }
+            
+            # Store under full key
+            results[key] = quote_data
+            results[norm_key] = quote_data
+            
+            # Store under each part (e.g. 'AJANTPHARM', 'INE031B01049')
+            for p in parts:
+                if p and p not in results:
+                    results[p] = quote_data
 
+    # Final mapping for sanity: Ensure every requested ident has some entry if possible
+    # (Results are already keyed by parts, so results['AJANTPHARM'] should exist)
+    
+    print(f"[Upstox] get_multiple_quotes final result keys count: {len(results)}")
     return results
